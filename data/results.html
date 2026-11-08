@@ -1,0 +1,20 @@
+<h3 style="margin:8px 0">1 · Planted faults on real days (simulated faults, real data)</h3>
+<div class="tablewrap"><table>
+<tr><th>Planted fault</th><th>Cases</th><th>AQI Truth (Db2)</th><th>Min/max threshold</th><th>Plain average</th></tr>
+<tr><td>Stuck sensor, 6 h</td><td>33</td><td>33 (100%)</td><td>0 (0%)</td><td>0</td></tr>
+<tr><td>Spike ×10, 1 h</td><td>33</td><td>22 (66%)</td><td>9 (27%)</td><td>0</td></tr>
+<tr><td>Dropout, 10 h</td><td>33</td><td>33 (100%)</td><td>0 (0%)</td><td>0</td></tr>
+<tr><td>Error code −9999, 3 h</td><td>33</td><td>33 (100%)</td><td>33 (100%)</td><td>0</td></tr>
+<tr><td>Zeros, 4 h</td><td>33</td><td>33 (100%)</td><td>0 (0%)</td><td>0</td></tr>
+<tr><td>Unit error ×1000, 4 h</td><td>33</td><td>33 (100%)</td><td>33 (100%)</td><td>0</td></tr>
+<tr><td><b>All faults</b></td><td>198</td><td><b>187 (94%)</b></td><td>75 (38%)</td><td>0 (0%)</td></tr>
+</table></div>
+<p class="note">Honest limits: the same person wrote the detectors and the fault types, so this checks that each rule works; it is not proof of real-world accuracy. The 100 "clean" control days were picked with our own checks, so 0 false alarms on them is by construction. Small spikes on low readings are missed (absolute jump limit).</p>
+<h3 style="margin:8px 0">2 · Real data: the same month, counted two ways</h3>
+<div class="tablewrap"><table>
+<tr><th>Oct 2025, missing PM2.5 hours</th><th>ThePrint (CPCB portal)</th><th>OpenAQ copy, any row</th><th>OpenAQ copy, plausible row</th></tr>
+<tr><td>Chandni Chowk</td><td>224</td><td>200</td><td>245</td></tr>
+<tr><td>Punjabi Bagh</td><td>123</td><td>138</td><td>138</td></tr>
+<tr><td>Najafgarh</td><td>100</td><td>78</td><td>82</td></tr>
+</table></div>
+<p class="note">We do not reproduce ThePrint's numbers exactly. Two public copies of the same government data disagree, and "missing" depends on a validity rule nobody publishes. That is the point: the number on a dashboard hides choices.</p>

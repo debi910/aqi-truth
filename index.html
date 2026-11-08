@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AQI Truth</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Serif:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="mast">
+  <div class="wrap">
+    <div class="kicker">Audit desk · Delhi · Sep–Dec 2025</div>
+    <h1>AQI&nbsp;Truth</h1>
+    <p class="dek">Delhi's monitors go blank, freeze and report impossible values. Dashboards still print a number.
+      <b>IBM Db2 checks every hour against CPCB's own rules and refuses when the data can't support an AQI.</b></p>
+    <div id="mode" class="mode" hidden></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="stats" id="stats" aria-label="Headline numbers"></section>
+
+  <section class="picker">
+    <label>Station <select id="station"></select></label>
+    <label>Day <input id="day" type="date" min="2025-09-01" max="2025-12-31" value="2025-10-23"></label>
+    <div class="quick" id="quick"></div>
+  </section>
+
+  <section class="verdict" id="verdict" aria-live="polite"></section>
+
+  <section class="block">
+    <h2>Hour by hour</h2>
+    <p class="note">Each cell is one hour of the day as Db2 saw it. CPCB needs 16 valid hours for a 24-hour average.</p>
+    <div id="grid" class="grid"></div>
+    <div class="legend"><span class="c ok"></span>valid <span class="c bad"></span>only impossible values (0, −9999, …) <span class="c stuck"></span>stuck sensor <span class="c none"></span>nothing arrived <span class="c jump"></span>impossible jump</div>
+  </section>
+
+  <section class="block two">
+    <div>
+      <h2>Why — in plain words</h2>
+      <div id="explain" class="explain"></div>
+    </div>
+    <div>
+      <h2>Evidence ledger</h2>
+      <p class="note">Written by the stored procedure, append-only (Db2 triggers block edits).</p>
+      <div class="tablewrap"><table id="evidence"></table></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>Every station, every day</h2>
+    <p class="note">Red: no AQI computable under CPCB rules. Amber: computed after excluding bad readings. Click a cell.</p>
+    <div id="cal" class="cal"></div>
+  </section>
+
+  <section class="block" id="askblock">
+    <h2>Ask the audit</h2>
+    <p class="note">Granite writes one SQL query. Code checks it. Db2 runs it as a user who can only read the audited views.</p>
+    <form id="askform"><input id="q" placeholder="Which stations had the most days with no computable AQI in October?" maxlength="300"><button>Ask</button></form>
+    <div id="answer"></div>
+  </section>
+
+  <section class="block">
+    <h2>Does it work? (measured)</h2>
+    <div id="results"></div>
+  </section>
+</main>
+<footer class="wrap foot">Data: OpenAQ archive of CPCB/DPCC/IMD/IITM monitoring (CC BY 4.0). AQI method: CPCB National AQI. Built on IBM Db2 12.1 and IBM Granite.
+  <a href="https://github.com/debi910/aqi-truth">Source</a></footer>
+<script src="app.js"></script>
+</body>
+</html>
