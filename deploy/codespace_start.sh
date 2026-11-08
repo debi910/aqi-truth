@@ -10,7 +10,7 @@ if [ ! -f .env ]; then
   sed -i "s/^DB2_PASSWORD=.*/DB2_PASSWORD=$(openssl rand -hex 12)/; s/^DB2_READER_PASSWORD=.*/DB2_READER_PASSWORD=$(openssl rand -hex 12)/" .env
   chmod 600 .env
 fi
-URL="https://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
+URL="https://${CODESPACE_NAME:-unknown}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
 grep -q '^ALLOWED_ORIGINS=' .env || echo "ALLOWED_ORIGINS=https://debi910.github.io,${URL}" >> .env
 until docker info >/dev/null 2>&1; do sleep 2; done
 echo "docker ready; starting compose"
@@ -22,5 +22,5 @@ if [ ! -f data/.full_loaded ]; then
     && touch data/.full_loaded
   docker compose restart app
 fi
-gh codespace ports visibility 8000:public -c "$CODESPACE_NAME" || echo "Set port 8000 to Public in the Ports tab"
+[ -n "${CODESPACE_NAME:-}" ] && gh codespace ports visibility 8000:public -c "$CODESPACE_NAME" 2>/dev/null || echo "port visibility is set by the keep-alive job"
 echo "READY: $URL"

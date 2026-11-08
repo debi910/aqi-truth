@@ -12,6 +12,9 @@ on:
         description: "Run even outside the judging window"
         type: boolean
         default: true
+      minutes:
+        description: "Heartbeat minutes"
+        default: "18"
 env:
   WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
   WINDOW_END: "2026-11-11T04:30:00Z"     # 10:00 AM IST, 11 Nov
@@ -43,10 +46,10 @@ jobs:
         if: steps.win.outputs.go == '1'
         run: |
           gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
-            'cd /workspaces/aqi-truth && git pull -q --ff-only || true; if [ -f /tmp/aqi-start.pid ] && kill -0 "$(cat /tmp/aqi-start.pid)" 2>/dev/null; then echo "start script already running"; else setsid nohup bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 < /dev/null & echo "start script launched"; fi; sleep 5; tail -n 3 /tmp/aqi-start.log'
+            'cd /workspaces/aqi-truth && git pull -q --ff-only || true; if [ -f /tmp/aqi-start.pid ] && kill -0 "$(cat /tmp/aqi-start.pid)" 2>/dev/null; then echo "start script already running"; else CODESPACE_NAME=${{ steps.cs.outputs.name }} setsid nohup bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 < /dev/null & echo "start script launched"; fi; sleep 5; tail -n 3 /tmp/aqi-start.log'
           gh codespace ports visibility 8000:public -c "${{ steps.cs.outputs.name }}" || true
       - name: Heartbeat for 18 minutes
         if: steps.win.outputs.go == '1'
         run: |
           gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
-            'for i in $(seq 1 18); do printf "%s " "$(date +%H:%M)"; curl -s -m 20 localhost:8000/api/health || { echo "app starting: $(tail -n 1 /tmp/aqi-start.log 2>/dev/null | cut -c1-160)"; }; echo; sleep 60; done; cd /workspaces/aqi-truth && docker compose ps -a --format "{{.Service}} {{.State}} {{.Status}}"; docker compose logs --tail 5 setup 2>/dev/null | cut -c1-200'
+            'for i in $(seq 1 ${{ github.event.inputs.minutes || '18' }}); do printf "%s " "$(date +%H:%M)"; curl -s -m 20 localhost:8000/api/health || { echo "app starting: $(tail -n 1 /tmp/aqi-start.log 2>/dev/null | cut -c1-160)"; }; echo; sleep 60; done; cd /workspaces/aqi-truth && docker compose ps -a --format "{{.Service}} {{.State}} {{.Status}}"; docker compose logs --tail 5 setup 2>/dev/null | cut -c1-200'
