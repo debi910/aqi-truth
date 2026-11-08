@@ -32,3 +32,5 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - README rewritten in the official template's layout; `architecture.md` and `submission.json` added; README screenshots.
 - Question box hardened: short station names are matched with LIKE, SQL comments stripped, wider out-of-scope filter (safety, children, blame), prompt hints on NULL AQI and failed checks. Eval: 12/20 before, 17/20 after (development score on the same set); 8/8 attack prompts held.
 - GitHub Pages live: https://debi910.github.io/aqi-truth/
+- Live site fixes after review on GitHub Pages: the question box no longer hangs in snapshot mode; it offers 9 real answers recorded from the live Db2 + Granite run (`scripts/export_asks.py`, `web/data/asks.json`), including 3 refusals. Duplicate station names (Lodhi Road, Pusa) now show their operator. Zero values in the ledger display as 0.00.
+- `AQ.V_DAY` now leaves out the US Embassy PM2.5-only monitor (OpenAQ 8118), so the question box returns the same counts as the headline (190). The reading count shown is now for the 34 audited stations (3,271,122).

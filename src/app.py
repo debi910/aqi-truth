@@ -34,7 +34,7 @@ def stats():
         SUM(CASE WHEN STATUS='NOT_COMPUTABLE' AND NAIVE_AQI IS NOT NULL THEN 1 ELSE 0 END),
         SUM(CASE WHEN STATUS='NOT_COMPUTABLE' AND NAIVE_AQI > 300 THEN 1 ELSE 0 END),
         SUM(CASE WHEN STATUS='SUSPECT' THEN 1 ELSE 0 END),
-        (SELECT COUNT(*) FROM AQ.READING) FROM AQ.V_DAY WHERE STATION_ID <> 8118""")[0]
+        (SELECT COUNT(*) FROM AQ.READING WHERE STATION_ID <> 8118) FROM AQ.V_DAY""")[0]
     return dict(station_days=r[0], not_computable=r[1], shown_anyway=r[2], shown_anyway_very_poor=r[3], suspect=r[4], readings=r[5])
 
 def day_payload(station: int, day: str, with_llm: bool):
