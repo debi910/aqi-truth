@@ -1,6 +1,9 @@
-# Keeps the live demo Codespace running during the judging window, so no laptop has to stay open.
-# Every 20 minutes (inside the window, or when run by hand): start the Codespace if it is stopped,
-# make sure the Db2 + Granite stack is up, make port 8000 public, and hold an SSH session with a heartbeat.
+# Keeps the live demo Codespace running when it is needed, and stopped when it is not, so no laptop stays open
+# and the free Codespaces hours are not wasted. The work is in deploy/keepalive_runner.sh.
+#  - Judging window (WINDOW_START..WINDOW_END): one run holds the Codespace up for ~5.5 h, then starts the next run
+#    itself (GitHub's own schedule fires unreliably, so it is only a backup that restarts the chain).
+#  - "Run workflow" by hand: keeps it up for `minutes`, then stops it (unless the window is open).
+#  - Outside the window, a scheduled run stops any Codespace left running.
 # Needs a repository secret CODESPACE_TOKEN: a classic personal access token with the "codespace" scope.
 name: keep-demo-alive
 on:
@@ -8,96 +11,45 @@ on:
     - cron: "*/20 * * * *"
   workflow_dispatch:
     inputs:
-      force:
-        description: "Run even outside the judging window"
-        type: boolean
-        default: true
       minutes:
-        description: "Heartbeat minutes"
-        default: "18"
+        description: "Keep it up for this many minutes"
+        default: "45"
       stop:
-        description: "Stop the Codespace now instead (saves free hours)"
+        description: "Stop the Codespace now instead"
         type: boolean
         default: false
+      probe:
+        description: "Also time a live question through the public port"
+        type: boolean
+        default: false
+      until:
+        description: "Keep it up until this UTC time (ISO, e.g. 2026-11-11T04:30:00Z); used by the run chain"
+        default: ""
 env:
   WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
   WINDOW_END: "2026-11-11T04:30:00Z"     # 10:00 AM IST, 11 Nov
+  REPO: ${{ github.repository }}
 permissions:
-  contents: write      # only to publish the second route's address on the 'endpoint' branch
-  actions: read        # to see when the demo was last woken by hand
+  contents: write      # publish the second route's address on the 'endpoint' branch
+  actions: write       # hand over to the next run in the chain
 concurrency:
   group: keep-demo-alive
   cancel-in-progress: false
 jobs:
   keepalive:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 350
     env:
       GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+      PUB_TOKEN: ${{ github.token }}
     steps:
-      - name: Inside the judging window?
-        id: win
+      - uses: actions/checkout@v4
+      - name: Keep up, or stop
         run: |
           now=$(date -u +%s); s=$(date -u -d "$WINDOW_START" +%s); e=$(date -u -d "$WINDOW_END" +%s)
-          if [ "${{ github.event.inputs.stop }}" = "true" ]; then echo "go=0" >> "$GITHUB_OUTPUT"; echo "stop=1" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] || { [ $now -ge $s ] && [ $now -le $e ]; }; then
-            echo "go=1" >> "$GITHUB_OUTPUT"
-          else
-            # Outside the window: stop the Codespace once nobody has woken it by hand for 60 minutes,
-            # so a forgotten demo does not burn the free Codespaces hours.
-            last=$(GH_TOKEN=${{ github.token }} gh api "repos/${{ github.repository }}/actions/workflows/keep-demo-alive.yml/runs?event=workflow_dispatch&per_page=1" -q '.workflow_runs[0].created_at' 2>/dev/null)
-            age=$(( now - $(date -u -d "${last:-1970-01-01}" +%s) ))
-            echo "Outside window; last manual wake ${last:-never} ($((age/60)) min ago)."; echo "go=0" >> "$GITHUB_OUTPUT"
-            [ $age -gt 3600 ] && echo "stop=1" >> "$GITHUB_OUTPUT" || true
-          fi
-      - name: Stop the Codespace (outside the window and idle, or asked)
-        if: steps.win.outputs.stop == '1'
-        run: |
-          gh codespace list -R "${{ github.repository }}" --json name,state -q '.[] | select(.state=="Available") | .name' | while read -r n; do
-            echo "stopping $n"; gh codespace stop -c "$n"; done
-      - name: Find the Codespace
-        if: steps.win.outputs.go == '1'
-        id: cs
-        run: |
-          name=$(gh codespace list -R "${{ github.repository }}" --json name,state -q '.[0].name')
-          [ -n "$name" ] || { echo "No Codespace exists for this repo"; exit 1; }
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-          gh codespace list -R "${{ github.repository }}"
-      - name: Start it and the stack
-        if: steps.win.outputs.go == '1'
-        run: |
-          gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
-            'cd /workspaces/aqi-truth && git pull -q --ff-only || true; if [ -f /tmp/aqi-start.pid ] && kill -0 "$(cat /tmp/aqi-start.pid)" 2>/dev/null; then echo "start script already running"; else CODESPACE_NAME=${{ steps.cs.outputs.name }} setsid nohup bash deploy/codespace_start.sh >> /tmp/aqi-start.log 2>&1 < /dev/null & echo "start script launched"; fi; sleep 5; tail -n 3 /tmp/aqi-start.log'
-          gh codespace ports visibility 8000:public -c "${{ steps.cs.outputs.name }}" || true
-      - name: Publish the second route (Cloudflare tunnel address) for the Pages site
-        if: steps.win.outputs.go == '1'
-        continue-on-error: true
-        env:
-          PUB_TOKEN: ${{ github.token }}
-        run: |
-          for i in $(seq 1 18); do
-            u=$(gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- 'cat /tmp/tunnel.url 2>/dev/null' | tr -d '\r\n')
-            [ -n "$u" ] && break; sleep 10
-          done
-          echo "tunnel: ${u:-none}"; [ -n "$u" ] || exit 0
-          echo "tunnel health: $(curl -s -m 20 "$u/api/health")"
-          cur=$(GH_TOKEN=$PUB_TOKEN gh api "repos/${{ github.repository }}/contents/endpoint.json?ref=endpoint" -q '.content' | base64 -d 2>/dev/null | grep -oE 'https://[^"]+' || true)
-          [ "$cur" = "$u" ] && { echo "already published"; exit 0; }
-          sha=$(GH_TOKEN=$PUB_TOKEN gh api "repos/${{ github.repository }}/contents/endpoint.json?ref=endpoint" -q .sha)
-          body=$(printf '{"api":"%s","updated":"%s"}\n' "$u" "$(date -u +%FT%TZ)" | base64 -w0)
-          GH_TOKEN=$PUB_TOKEN gh api -X PUT "repos/${{ github.repository }}/contents/endpoint.json" -f branch=endpoint -f message="Second route: $u" -f content="$body" -f sha="$sha" -q .commit.sha
-      - name: Probe the question box (local and through the public port, as the Pages site calls it)
-        if: steps.win.outputs.go == '1'
-        continue-on-error: true
-        run: |
-          Q='{"question":"Which station had the highest audited AQI in October 2025?"}'
-          echo "--- local POST"; gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- "curl -s -m 150 -w ' [%{http_code} %{time_total}s]' -X POST localhost:8000/api/ask -H 'content-type: application/json' -d '$Q' | cut -c1-600"; echo
-          U="https://${{ steps.cs.outputs.name }}-8000.app.github.dev"
-          echo "--- public preflight"; curl -s -m 30 -o /dev/null -D - -X OPTIONS "$U/api/ask" -H "Origin: https://debi910.github.io" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type" | grep -iE "^HTTP|access-control|location" || true
-          echo "--- public stream (seconds since start, event)"; s0=$(date +%s.%N); curl -sN -m 150 -X POST "$U/api/ask/stream" -H "Origin: https://debi910.github.io" -H "content-type: application/json" -d '{"question":"How many station-days were suspect in December?","fresh":true}' | while IFS= read -r l; do printf '%5.1f %s\n' "$(echo "$(date +%s.%N) - $s0" | bc)" "$(echo "$l" | cut -c1-90)"; done | awk '!/"tok"/ || ++n<=3'
-          echo "--- public POST"; curl -s -m 150 -w ' [%{http_code} %{time_total}s]' -X POST "$U/api/ask" -H "Origin: https://debi910.github.io" -H "content-type: application/json" -d "$Q" | cut -c1-600; echo
-      - name: Heartbeat for 18 minutes
-        if: steps.win.outputs.go == '1'
-        run: |
-          gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
-            'for i in $(seq 1 ${{ github.event.inputs.minutes || '18' }}); do printf "%s " "$(date +%H:%M)"; curl -s -m 20 localhost:8000/api/health || { echo "app starting: $(tail -n 1 /tmp/aqi-start.log 2>/dev/null | cut -c1-160)"; }; echo; sleep 60; done; cd /workspaces/aqi-truth && docker compose ps -a --format "{{.Service}} {{.State}} {{.Status}}"; echo "raw station-month files: $(ls data/raw 2>/dev/null | grep -c csv$) of 140; full load done: $([ -f data/.full_loaded ] && echo yes || echo no)"; docker ps --format "{{.Names}}" | grep run | xargs -r -I{} docker logs --tail 3 {} 2>&1 | cut -c1-200; echo "--- start log"; tail -n 25 /tmp/aqi-start.log | cut -c1-300; echo "--- tunnel log"; ls -la /tmp/cloudflared; tail -n 15 /tmp/cloudflared.log | cut -c1-250; cat /tmp/tunnel.url'
+          probe=$([ "${{ github.event.inputs.probe }}" = "true" ] && echo 1 || echo 0)
+          if [ "${{ github.event.inputs.stop }}" = "true" ]; then bash deploy/keepalive_runner.sh stop
+          elif [ -n "${{ github.event.inputs.until }}" ]; then bash deploy/keepalive_runner.sh keep "$(date -u -d "${{ github.event.inputs.until }}" +%s)" "$probe"
+          elif [ $now -ge $s ] && [ $now -le $e ]; then bash deploy/keepalive_runner.sh keep "$e" "$probe"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then bash deploy/keepalive_runner.sh keep $(( now + ${{ github.event.inputs.minutes || 45 }} * 60 )) "$probe"
+          else echo "Outside the judging window: stopping anything left running."; bash deploy/keepalive_runner.sh stop; fi
