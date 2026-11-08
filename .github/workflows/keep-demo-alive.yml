@@ -1,0 +1,52 @@
+# Keeps the live demo Codespace running during the judging window, so no laptop has to stay open.
+# Every 20 minutes (inside the window, or when run by hand): start the Codespace if it is stopped,
+# make sure the Db2 + Granite stack is up, make port 8000 public, and hold an SSH session with a heartbeat.
+# Needs a repository secret CODESPACE_TOKEN: a classic personal access token with the "codespace" scope.
+name: keep-demo-alive
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Run even outside the judging window"
+        type: boolean
+        default: true
+env:
+  WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
+  WINDOW_END: "2026-11-11T04:30:00Z"     # 10:00 AM IST, 11 Nov
+concurrency:
+  group: keep-demo-alive
+  cancel-in-progress: false
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+    steps:
+      - name: Inside the judging window?
+        id: win
+        run: |
+          now=$(date -u +%s); s=$(date -u -d "$WINDOW_START" +%s); e=$(date -u -d "$WINDOW_END" +%s)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || { [ $now -ge $s ] && [ $now -le $e ]; }; then
+            echo "go=1" >> "$GITHUB_OUTPUT"; else echo "Outside window; nothing to do."; echo "go=0" >> "$GITHUB_OUTPUT"; fi
+      - name: Find the Codespace
+        if: steps.win.outputs.go == '1'
+        id: cs
+        run: |
+          name=$(gh codespace list -R "${{ github.repository }}" --json name,state -q '.[0].name')
+          [ -n "$name" ] || { echo "No Codespace exists for this repo"; exit 1; }
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          gh codespace list -R "${{ github.repository }}"
+      - name: Start it and the stack
+        if: steps.win.outputs.go == '1'
+        run: |
+          gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
+            'cd /workspaces/aqi-truth && (pgrep -f codespace_start.sh >/dev/null || nohup bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 &) ; sleep 2; tail -n 3 /tmp/aqi-start.log'
+          gh codespace ports visibility 8000:public -c "${{ steps.cs.outputs.name }}" || true
+      - name: Heartbeat for 18 minutes
+        if: steps.win.outputs.go == '1'
+        run: |
+          gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
+            'for i in $(seq 1 18); do printf "%s " "$(date +%H:%M)"; curl -s -m 20 localhost:8000/api/health || echo "app starting"; echo; sleep 60; done'

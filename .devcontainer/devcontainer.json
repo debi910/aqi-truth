@@ -3,10 +3,22 @@
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/sshd:1": {}
   },
-  "hostRequirements": { "cpus": 4, "memory": "16gb", "storage": "32gb" },
-  "forwardPorts": [8000],
-  "portsAttributes": { "8000": { "label": "AQI Truth", "onAutoForward": "silent" } },
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "32gb"
+  },
+  "forwardPorts": [
+    8000
+  ],
+  "portsAttributes": {
+    "8000": {
+      "label": "AQI Truth",
+      "onAutoForward": "silent"
+    }
+  },
   "postStartCommand": "bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 &"
 }

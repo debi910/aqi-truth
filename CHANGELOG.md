@@ -40,3 +40,4 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - Question-box eval rerun after the view and ranking fixes: 18/20, 8/8 attacks held, no rows changed.
 - GitHub Codespaces option (`.devcontainer/`, `deploy/codespace_start.sh`): full stack with a public HTTPS port, no card needed. `load.py --if-empty` so the setup job never wipes a loaded database on restart.
 - `deploy/keepalive.sh`: Codespace terminal heartbeat for the judging window.
+- Scheduled GitHub Actions workflow `keep-demo-alive` restarts and pings the demo Codespace every 20 minutes during the judging window (needs a CODESPACE_TOKEN secret); sshd added to the devcontainer.
