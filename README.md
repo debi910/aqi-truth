@@ -58,7 +58,7 @@ On top of that:
 ---
 
 ## Results on real data
-34 Delhi CAAQMS stations, 1 Sep to 31 Dec 2025, 3,271,122 fifteen-minute readings, 4,148 station-days. MERGE load 28 s; full audit 2 min 40 s on a 4-core cloud container.
+34 Delhi CAAQMS stations, 1 Sep to 31 Dec 2025, 1,872,155 fifteen-minute readings of the six AQI pollutants (weather channels are dropped at load), 4,148 station-days. MERGE load 28 s; full audit 2 min 40 s on a 4-core cloud container.
 
 | Finding | Count |
 |---|---|

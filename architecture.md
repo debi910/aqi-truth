@@ -42,7 +42,7 @@ flowchart LR
 
 | Feature | Where | Why it is needed here |
 |---|---|---|
-| Range partitioning by month | `AQ.READING` | 3.27M rows for four months; audits read one day at a time |
+| Range partitioning by month | `AQ.READING` | 1.87M pollutant rows for four months; audits read one day at a time |
 | System-period temporal table | `AQ.READING` | Government feeds get revised; an audit must be able to show what the data said when it was judged |
 | MERGE | `sql/03_merge.sql` | Idempotent reloads; only changed values create history |
 | SQL PL procedures and a function | `sql/04_audit.sql` | The CPCB method runs next to the data, the same way for the app, the tests and the evaluation |
