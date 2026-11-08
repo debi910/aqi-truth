@@ -1,6 +1,7 @@
 """AQI Truth web API (FastAPI). Serves the page in web/ and reads everything from Db2."""
-import datetime as dt, os, sys
-from fastapi import FastAPI, HTTPException
+import collections, datetime as dt, os, sys, threading, time
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -10,11 +11,28 @@ import explain as ex, ask as asker
 
 WEB = os.path.join(os.path.dirname(__file__), "..", "web")
 app = FastAPI(title="AQI Truth")
-_conn = None
+# The GitHub Pages copy of the UI may call a hosted API, so allow that origin (comma-separated list in ALLOWED_ORIGINS).
+app.add_middleware(CORSMiddleware, allow_origins=os.getenv("ALLOWED_ORIGINS", "https://debi910.github.io").split(","),
+                   allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
+_local = threading.local()
 def conn():
-    global _conn
-    if _conn is None: _conn = connect()
-    return _conn
+    # one Db2 connection per worker thread (FastAPI runs sync handlers in a thread pool)
+    if getattr(_local, "c", None) is None: _local.c = connect()
+    return _local.c
+
+# Granite runs on CPU: one generation at a time, and a small per-visitor budget so a public demo stays usable.
+LLM_LOCK = threading.Lock()
+_hits = collections.defaultdict(collections.deque)
+def throttle(request: Request, per_min=int(os.getenv("ASK_PER_MIN", "6"))):
+    ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "?").split(",")[0].strip()
+    q, now = _hits[ip], time.time()
+    while q and now - q[0] > 60: q.popleft()
+    if len(q) >= per_min: raise HTTPException(429, "Too many questions from this address; try again in a minute.")
+    q.append(now)
+
+@app.get("/api/health")
+def health():
+    return dict(db2=rows(conn(), "SELECT COUNT(*) FROM AQ.V_DAY")[0][0] > 0, model=ex.MODEL)
 
 PARAMS = ["pm25", "pm10", "no2", "so2", "o3", "co"]
 
@@ -55,7 +73,8 @@ def day_payload(station: int, day: str, with_llm: bool):
                               k="ok" if valid else ("stuck" if flat else ("bad" if nok == 0 else "short")), j=bool(jump))
     expl = rows(conn(), "SELECT TEXT, MODEL, RULE_REFS, VECTOR_AGREES FROM AQ.EXPLANATION WHERE RUN_ID=? ORDER BY CREATED_AT DESC FETCH FIRST 1 ROW ONLY", (run,))
     if not expl and with_llm:
-        e = ex.explain(conn(), run); expl = [(e["text"], e["model"], ",".join(e["cited"]), int(e["vector_agrees"]))]
+        with LLM_LOCK:
+            e = ex.explain(conn(), run); expl = [(e["text"], e["model"], ",".join(e["cited"]), int(e["vector_agrees"]))]
     return dict(run_id=run, station=name, operator=op, day=day, status=status, aqi=aqi, naive_aqi=naive, prominent=prom,
                 valid_params=nparams, reason=reason, grid=grid,
                 evidence=[dict(param=r[0], check=r[1], observed=r[2], passed=bool(r[3]), rule=r[4], source=r[5], url=r[6]) for r in ev],
@@ -69,9 +88,11 @@ class Q(BaseModel):
     question: str
 
 @app.post("/api/ask")
-def ask_q(q: Q):
+def ask_q(q: Q, request: Request):
     if len(q.question) > 300: raise HTTPException(400, "question too long")
-    r = asker.ask(q.question)
+    throttle(request)
+    with LLM_LOCK:
+        r = asker.ask(q.question)
     if r.get("rows"):
         r["rows"] = [[str(c) if isinstance(c, (dt.date, dt.datetime)) else c for c in row] for row in r["rows"]]
     return r

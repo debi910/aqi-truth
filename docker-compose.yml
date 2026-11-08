@@ -4,6 +4,7 @@ services:
   db2:
     image: icr.io/db2_community/db2:12.1.5.0
     privileged: true
+    restart: unless-stopped
     environment:
       LICENSE: accept
       DB2INSTANCE: db2inst1
@@ -23,6 +24,7 @@ services:
 
   ollama:
     image: ollama/ollama:0.12.6
+    restart: unless-stopped
     entrypoint: ["/bin/sh", "/entry.sh"]
     volumes:
       - models:/models
@@ -46,10 +48,23 @@ services:
     build: .
     env_file: .env
     ports: ["8000:8000"]
+    restart: unless-stopped
     depends_on:
       setup: {condition: service_completed_successfully}
 
+  # Public HTTPS front for a hosted demo: `DOMAIN=your.host docker compose --profile public up -d`
+  caddy:
+    image: caddy:2.8.4
+    profiles: ["public"]
+    command: caddy reverse-proxy --from ${DOMAIN:-localhost} --to app:8000
+    ports: ["80:80", "443:443"]
+    volumes:
+      - caddy:/data
+    restart: unless-stopped
+    depends_on: [app]
+
 volumes:
+  caddy:
   db2data:
   models:
   ollama:

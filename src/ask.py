@@ -37,6 +37,8 @@ def check_sql(sql):
     # Models often write LIMIT n; Db2 uses FETCH FIRST n ROWS ONLY.
     sql = re.sub(r"\s+LIMIT\s+(\d+)\s*$", r" FETCH FIRST \1 ROWS ONLY", sql, flags=re.I)
     sql = re.sub(r"--[^\n]*", "", sql)
+    # Db2 sorts NULL as the highest value; an AQI ranking must not put refused (NULL) days first.
+    sql = re.sub(r"\b((?:\w+\.)?(?:NAIVE_)?AQI|MAX\(\s*(?:\w+\.)?AQI\s*\))\s+DESC\b(?!\s+NULLS)", r"\1 DESC NULLS LAST", sql, flags=re.I)
     # Users type short names ("ITO", "Punjabi Bagh"); stored names are longer, so exact matches become LIKE.
     sql = re.sub(r"\bSTATION\s*=\s*'([^',]+)[^']*'", lambda m: f"STATION LIKE '%{m.group(1).strip()}%'", sql, flags=re.I)
     try:

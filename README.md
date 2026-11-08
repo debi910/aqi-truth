@@ -2,7 +2,7 @@
 
 > **One-Line Pitch:** Delhi's air-quality dashboards print a number even when the monitors were blank, frozen or reporting impossible values. AQI Truth puts the official CPCB method inside IBM Db2, so Db2 checks every hour and **refuses to give an AQI when the data cannot support one**, with a tamper-proof evidence ledger for each decision.
 
-- **Live demo (static snapshot of the full run):** https://debi910.github.io/aqi-truth/
+- **Live demo:** https://debi910.github.io/aqi-truth/ (calls the hosted Db2 + Granite server when it is up; otherwise shows a clearly labelled export of the same run)
 - **Demo video:** _to be added_
 - **Code:** https://github.com/debi910/aqi-truth
 
@@ -147,9 +147,15 @@ docker compose logs -f setup  # wait for "rule texts embedded"
 
 The `setup` job builds the schema, loads the shipped sample (3 stations, October 2025: Chandni Chowk, ITO, Anand Vihar), runs the audit and embeds the rule texts. On the sample, 91 of 93 station-days match the full run exactly; the other two (31 Oct) differ by a few AQI points because the sample has no November hours.
 
+**Hosted demo on a VM** (Ubuntu, 8 GB RAM, ports 80/443 open, a public DNS name):
+```bash
+curl -fsSL https://raw.githubusercontent.com/debi910/aqi-truth/main/deploy/vm_setup.sh | sudo DOMAIN=<vm-dns-name> bash
+```
+It installs Docker, generates passwords, starts Db2, Granite, the app and Caddy (HTTPS), then loads all 34 stations.
+
 **Full dataset** (34 stations, Sep–Dec 2025):
 ```bash
-python scripts/fetch_openaq.py data/raw 2025 9,10,11,12
+python scripts/fetch_openaq.py data/raw 2025 09,10,11,12
 docker compose run --rm -v "$PWD/data/raw:/app/data/raw" setup python src/load.py data/raw 2025-09-01 2025-12-31
 ```
 

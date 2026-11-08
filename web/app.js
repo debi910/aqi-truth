@@ -3,21 +3,24 @@ const $ = s => document.querySelector(s);
 const PARAMS = ["pm25","pm10","no2","so2","o3","co"];
 const LABEL = {pm25:"PM2.5",pm10:"PM10",no2:"NO₂",so2:"SO₂",o3:"O₃",co:"CO",ALL:"all"};
 let LIVE = true, STATIONS = [];
+const API = (window.AQT_API || "").replace(/\/$/, "");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cat = a => a == null ? "" : a <= 50 ? "Good" : a <= 100 ? "Satisfactory" : a <= 200 ? "Moderate" : a <= 300 ? "Poor" : a <= 400 ? "Very Poor" : "Severe";
 
 async function get(path, snap) {
-  if (LIVE) { const r = await fetch(path); if (!r.ok) throw new Error((await r.json()).detail || r.status); return r.json(); }
+  if (LIVE) { const r = await fetch(API + path); if (!r.ok) throw new Error((await r.json()).detail || r.status); return r.json(); }
   const r = await fetch(snap); if (!r.ok) throw new Error("not in snapshot"); return r.json();
 }
 
 async function init() {
-  try { const r = await fetch("/api/stats"); if (!r.ok) throw 0; LIVE = true; }
+  try { const r = await fetch(API + "/api/health", {signal: AbortSignal.timeout(8000)}); if (!r.ok) throw 0; LIVE = true; }
   catch { LIVE = false; }
-  if (!LIVE) {
-    const m = $("#mode"); m.hidden = false;
-    m.textContent = "Snapshot mode: a read-only export of the real Db2 audit run. Run it locally with Db2 for every day and the question box.";
-  }
+  const m = $("#mode"); m.hidden = false;
+  m.className = "mode " + (LIVE ? "live" : "");
+  m.textContent = LIVE
+    ? "Live: every verdict, explanation and question below is answered now by IBM Db2 and IBM Granite" + (API ? " on " + new URL(API).host : "") + "."
+    : (API ? "The live Db2 server is not answering right now, so this is a read-only export of the same audit run. "
+           : "Snapshot mode: a read-only export of the real Db2 audit run. ") + "Run it with docker compose for every day and the question box.";
   const [stats, stations, calendar] = await Promise.all([
     get("/api/stats", "data/stats.json"), get("/api/stations", "data/stations.json"), get("/api/calendar", "data/calendar.json")]);
   STATIONS = stations;
@@ -39,7 +42,7 @@ async function init() {
   drawCalendar(calendar);
   results();
   $("#askform").onsubmit = askQ;
-  if (!LIVE) snapshotAsk();
+  askButtons();
   load();
 }
 
@@ -88,15 +91,17 @@ function drawCalendar(cal) {
 }
 
 let RECORDED = null;
-async function snapshotAsk() {
+async function askButtons() {
   try { RECORDED = await (await fetch("data/asks.json")).json(); } catch { return; }
-  $("#askblock").querySelector(".note").textContent =
-    `This static copy has no live Db2 or Granite, so typed questions can't run here. These are real answers recorded from the live system on ${RECORDED.recorded}: Granite wrote the SQL, Db2 ran it as the read-only user. Pick one.`;
-  $("#q").placeholder = "Pick a recorded question below (typing needs the Docker version)";
+  if (LIVE) $("#askblock").querySelector(".note").textContent =
+    "Type any question about the audit, or try one below. Granite writes one SELECT, code checks it, and Db2 runs it as a user that can only read two views.";
+  else $("#askblock").querySelector(".note").textContent =
+    `The live server is offline, so typed questions can't run. Below are answers the live system gave on ${RECORDED.recorded} (Granite wrote the SQL, Db2 ran it as the read-only user), kept only as a fallback.`;
+  if (!LIVE) $("#q").placeholder = "Live server offline: pick a question below to see its recorded answer";
   const box = document.createElement("div"); box.className = "quick"; box.id = "askquick";
   box.innerHTML = RECORDED.answers.map((a, i) => `<button type="button" data-i="${i}">${esc(a.question)}</button>`).join("");
   $("#askform").after(box);
-  box.onclick = e => { const b = e.target.closest("button"); if (b) { const a = RECORDED.answers[+b.dataset.i]; $("#q").value = a.question; show(a); } };
+  box.onclick = e => { const b = e.target.closest("button"); if (b) { const a = RECORDED.answers[+b.dataset.i]; $("#q").value = a.question; if (LIVE) $("#askform").requestSubmit(); else show(a); } };
 }
 
 async function askQ(e) {
@@ -104,18 +109,19 @@ async function askQ(e) {
   if (!LIVE) {
     const a = RECORDED && RECORDED.answers.find(x => x.question.toLowerCase() === q.toLowerCase());
     if (a) return show(a);
-    $("#answer").innerHTML = `<p class="note">Typed questions need the live Db2 and Granite (run <code>docker compose up</code>). In this copy, pick one of the recorded questions.</p>`; return;
+    $("#answer").innerHTML = `<p class="note">The live server is offline, so typed questions can't run right now. Pick one of the questions below, or run it yourself with <code>docker compose up</code>.</p>`; return;
   }
   $("#answer").innerHTML = `<p class="note">Granite is writing SQL…</p>`;
   let r;
-  try { const res = await fetch("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({question:q})}); r = await res.json(); }
+  try { const res = await fetch(API + "/api/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({question:q})}); r = await res.json(); if (!res.ok) r = {refused: true, why: r.detail || ("server error " + res.status)}; }
   catch { $("#answer").innerHTML = `<p class="note">The question service did not answer. Is the app running?</p>`; return; }
   show(r);
 }
 
 function show(r) {
-  if (r.refused) { $("#answer").innerHTML = `<div class="refuse"><b>Refused.</b> ${esc(r.why)}</div>${r.sql ? `<div class="sql">${esc(r.sql)}</div>` : ""}`; return; }
-  $("#answer").innerHTML = `<div class="sql">${esc(r.sql)}</div><div class="tablewrap"><table><tr>${r.columns.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>${r.rows.map(row=>`<tr>${row.map(c=>`<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`;
+  const tag = !LIVE && r.question ? `<p class="note">Recorded answer (${RECORDED.recorded}), not live.</p>` : "";
+  if (r.refused) { $("#answer").innerHTML = tag + `<div class="refuse"><b>Refused.</b> ${esc(r.why)}</div>${r.sql ? `<div class="sql">${esc(r.sql)}</div>` : ""}`; return; }
+  $("#answer").innerHTML = tag + `<div class="sql">${esc(r.sql)}</div><div class="tablewrap"><table><tr>${r.columns.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>${r.rows.map(row=>`<tr>${row.map(c=>`<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`;
 }
 
 async function results() {

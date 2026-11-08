@@ -34,3 +34,9 @@ def test_number_and_advice_detectors():
     assert numbers("AQI was 175 on 23 October.") == {"175", "23"}
     assert BANNED.search("People should wear a mask")
     assert not BANNED.search("No AQI can be calculated for this day")
+
+def test_short_station_names_become_like():
+    assert "STATION LIKE '%ITO%'" in check_sql("SELECT MAX(AQI) FROM AQ.V_DAY WHERE STATION = 'ITO'")
+
+def test_aqi_ranking_puts_refused_days_last():
+    assert "AQI DESC NULLS LAST" in check_sql("SELECT STATION FROM AQ.V_DAY ORDER BY AQI DESC")

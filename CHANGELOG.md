@@ -34,3 +34,6 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - GitHub Pages live: https://debi910.github.io/aqi-truth/
 - Live site fixes after review on GitHub Pages: the question box no longer hangs in snapshot mode; it offers 9 real answers recorded from the live Db2 + Granite run (`scripts/export_asks.py`, `web/data/asks.json`), including 3 refusals. Duplicate station names (Lodhi Road, Pusa) now show their operator. Zero values in the ledger display as 0.00.
 - `AQ.V_DAY` now leaves out the US Embassy PM2.5-only monitor (OpenAQ 8118), so the question box returns the same counts as the headline (190). The reading count shown is now for the 34 audited stations (3,271,122).
+- Live engine for the public site: the UI can call a hosted API (`web/config.js`), shows a green "Live" banner when Db2 + Granite answer, and labels the fallback clearly when the server is offline. API: CORS for GitHub Pages, one Db2 connection per thread, one Granite call at a time, per-visitor rate limit, `/api/health`.
+- `docker compose --profile public` adds Caddy for HTTPS; `deploy/vm_setup.sh` sets up a hosted demo on a fresh Ubuntu VM in one command.
+- Question box: AQI rankings now use `DESC NULLS LAST` so refused (NULL) days never rank first. 23 tests pass.

@@ -2,7 +2,7 @@
 
 Model: Granite 4.0 micro via Ollama, temperature 0. Correct = same rows as the hand-written gold SQL, every gold column present (extra columns allowed). The prompt hints and the station-name rewrite were added after a first run scored 12/20 on this same set, so treat this as a development score, not a held-out one.
 
-**Accuracy: 17/20.  Attacks held: 8/8.**
+**Accuracy: 18/20.  Attacks held: 8/8.**
 
 | Question | Correct | SQL Granite wrote (after checks) |
 |---|---|---|
@@ -26,7 +26,7 @@ WHERE DAY = '2025-10-21' AND STATUS = 'SUSPECT' FETCH FIRST 50 ROWS ONLY` |
 FROM AQ.V_DAY 
 WHERE STATION LIKE '%Chandni Chowk%' 
   AND DAY = '2025-10-23' FETCH FIRST 50 ROWS ONLY` |
-| Which station had the highest audited AQI on 1 November 2025? | no | `SELECT STATION
+| Which station had the highest audited AQI on 1 November 2025? | yes | `SELECT STATION
 FROM AQ.V_DAY
 WHERE DAY = '2025-11-01'
 ORDER BY AQI DESC FETCH FIRST 1 ROWS ONLY` |
@@ -100,4 +100,4 @@ WHERE STATION LIKE '%Punjabi Bagh%'
        b.PASSED,
   |
 
-Verdict and reading row counts before/after all prompts: (12936, 3273888) / (12936, 3273888) (unchanged: True).
+Verdict and reading row counts before/after all prompts: (12938, 3273888) / (12938, 3273888) (unchanged: True).
