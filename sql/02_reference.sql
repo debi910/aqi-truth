@@ -18,7 +18,7 @@ INSERT INTO AQ.PLAUSIBLE (PARAM, MIN_V, MAX_V, MAX_JUMP, FLAT_HOURS) VALUES
 -- Audit settings.
 CREATE TABLE AQ.SETTING (NAME VARCHAR(30) NOT NULL PRIMARY KEY, NUM_VALUE DOUBLE NOT NULL, NOTE VARCHAR(300) NOT NULL)@
 INSERT INTO AQ.SETTING VALUES
- ('MIN_QUARTERS_PER_HOUR',3,'An hourly average needs at least 3 of 4 plausible 15-minute readings (75% data capture).'),
+ ('MIN_QUARTERS_PER_HOUR',1,'An hour is valid with at least 1 plausible reading: the 15-minute rows in the OpenAQ copy repeat one hourly value.'),
  ('MIN_HOURS_24H',16,'CPCB: a 24-hour average needs at least 16 valid hours (the rule the CAG audit cited).'),
  ('MIN_HOURS_8H',6,'An 8-hour average (O3, CO) needs at least 6 valid hours (75%).'),
  ('MIN_PARAMS',3,'CPCB: AQI needs sub-indices for at least 3 pollutants, one of them PM2.5 or PM10.')@
