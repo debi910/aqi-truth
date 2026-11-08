@@ -37,7 +37,7 @@ services:
     env_file: .env
     command: >
       sh -c "python scripts/pull_models.py /models &&
-             python src/load.py data/sample 2025-10-01 2025-10-31"
+             python src/load.py data/sample 2025-10-01 2025-10-31 --if-empty"
     volumes:
       - models:/models
     depends_on:

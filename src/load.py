@@ -14,11 +14,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("raw"); ap.add_argument("day_from"); ap.add_argument("day_to")
     ap.add_argument("--schema", default="AQ"); ap.add_argument("--no-embed", action="store_true")
+    ap.add_argument("--if-empty", action="store_true", help="do nothing if the schema already holds audited data (safe on every restart)")
     a = ap.parse_args()
     s = a.schema.upper()
     conn = connect(); cur = conn.cursor()
     cur.execute("SELECT COUNT(*) FROM SYSCAT.SCHEMATA WHERE SCHEMANAME = ?", (s,))
-    if cur.fetchone()[0]:
+    exists = cur.fetchone()[0]
+    if exists and a.if_empty:
+        try:
+            cur.execute(f"SELECT COUNT(*) FROM {s}.VERDICT")
+            if cur.fetchone()[0] > 0:
+                print(f"schema {s} already loaded: nothing to do"); return
+        except Exception:
+            conn.rollback()
+    if exists:
         print(f"schema {s} exists: dropping it"); cur.callproc("SYSPROC.ADMIN_DROP_SCHEMA", (s, None, "ERRSCHEMA", "ERRTABLE")); conn.commit()
     for f in SCRIPTS:
         try:

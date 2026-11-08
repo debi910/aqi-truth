@@ -147,6 +147,8 @@ docker compose logs -f setup  # wait for "rule texts embedded"
 
 The `setup` job builds the schema, loads the shipped sample (3 stations, October 2025: Chandni Chowk, ITO, Anand Vihar), runs the audit and embeds the rule texts. On the sample, 91 of 93 station-days match the full run exactly; the other two (31 Oct) differ by a few AQI points because the sample has no November hours.
 
+**Hosted demo in GitHub Codespaces** (free, no card): on the repo page click **Code → Codespaces → Create codespace on main** (choose the 4-core machine). The stack starts by itself (`deploy/codespace_start.sh`, about 25 minutes the first time) and port 8000 is made public.
+
 **Hosted demo on a VM** (Ubuntu, 8 GB RAM, ports 80/443 open, a public DNS name):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/debi910/aqi-truth/main/deploy/vm_setup.sh | sudo DOMAIN=<vm-dns-name> bash
