@@ -21,6 +21,9 @@ async function init() {
   const [stats, stations, calendar] = await Promise.all([
     get("/api/stats", "data/stats.json"), get("/api/stations", "data/stations.json"), get("/api/calendar", "data/calendar.json")]);
   STATIONS = stations;
+  const short = s => s.name.split(",")[0];
+  const dup = {}; for (const st of stations) dup[short(st)] = (dup[short(st)] || 0) + 1;
+  for (const st of stations) st.label = dup[short(st)] > 1 ? `${short(st)} (${st.operator || "?"})` : short(st);
   $("#stats").innerHTML = `
     <div class="stat hot"><b>${stats.shown_anyway}</b><span>station-days where CPCB rules give no AQI but a plain average still shows one</span></div>
     <div class="stat"><b>${stats.shown_anyway_very_poor}</b><span>of those would have been shown as Very Poor or Severe</span></div>
@@ -35,8 +38,8 @@ async function init() {
   $("#station").onchange = $("#day").onchange = () => load();
   drawCalendar(calendar);
   results();
-  if (!LIVE) { $("#askblock").querySelector(".note").textContent = "The question box needs the live Db2 and Granite. Example answers from the live run are in the README."; $("#askform").hidden = true; }
   $("#askform").onsubmit = askQ;
+  if (!LIVE) snapshotAsk();
   load();
 }
 
@@ -72,22 +75,45 @@ async function load() {
       <span class="badge">${ex.vector_agrees ? "Db2 vector search found the same rule ✓" : "vector search disagreed; cited rule used"}</span>
       <span class="badge">rules: ${esc(ex.rules)}</span></div>` : `<span class="note">No explanation stored for this day.</span>`;
   $("#evidence").innerHTML = `<tr><th>Pollutant</th><th>Check</th><th>Observed</th><th>Rule</th></tr>` + v.evidence.map(e =>
-    `<tr class="${e.passed ? "" : "fail"}"><td>${LABEL[e.param]||e.param}</td><td>${e.passed ? "✓" : "✗"} ${e.check}</td><td>${esc(e.observed)}</td>
+    `<tr class="${e.passed ? "" : "fail"}"><td>${LABEL[e.param]||e.param}</td><td>${e.passed ? "✓" : "✗"} ${e.check}</td><td>${esc(String(e.observed ?? "").replace(/(^|[^\d])\.(\d)/g, "$10.$2"))}</td>
      <td>${e.url ? `<a href="${e.url}" target="_blank" rel="noopener" title="${esc(e.source)}">${e.rule}</a>` : e.rule}</td></tr>`).join("");
 }
 
 function drawCalendar(cal) {
   const days = []; for (let t = Date.UTC(2025,8,1); t <= Date.UTC(2025,11,31); t += 864e5) days.push(new Date(t).toISOString().slice(0,10));
   const by = {}; for (const c of cal) (by[c.s] ||= {})[c.d] = c;
-  $("#cal").innerHTML = STATIONS.map(s => `<div class="calrow"><div class="nm" title="${esc(s.name)}">${esc(s.name.split(",")[0])}</div>` +
+  $("#cal").innerHTML = STATIONS.map(s => `<div class="calrow"><div class="nm" title="${esc(s.name)}">${esc(s.label)}</div>` +
     days.map(d => { const c = (by[s.id]||{})[d]; return `<div class="d ${c ? (c.st === "V" ? "" : c.st) : "x"}" data-s="${s.id}" data-d="${d}" title="${d}${c ? " · " + c.st + " · audited " + (c.a ?? "—") + " / plain " + (c.n ?? "—") : ""}"></div>`; }).join("") + `</div>`).join("");
   $("#cal").onclick = e => { const d = e.target.closest(".d"); if (d) { pick(+d.dataset.s, d.dataset.d); $("#verdict").scrollIntoView({behavior:"smooth"}); } };
 }
 
+let RECORDED = null;
+async function snapshotAsk() {
+  try { RECORDED = await (await fetch("data/asks.json")).json(); } catch { return; }
+  $("#askblock").querySelector(".note").textContent =
+    `This static copy has no live Db2 or Granite, so typed questions can't run here. These are real answers recorded from the live system on ${RECORDED.recorded}: Granite wrote the SQL, Db2 ran it as the read-only user. Pick one.`;
+  $("#q").placeholder = "Pick a recorded question below (typing needs the Docker version)";
+  const box = document.createElement("div"); box.className = "quick"; box.id = "askquick";
+  box.innerHTML = RECORDED.answers.map((a, i) => `<button type="button" data-i="${i}">${esc(a.question)}</button>`).join("");
+  $("#askform").after(box);
+  box.onclick = e => { const b = e.target.closest("button"); if (b) { const a = RECORDED.answers[+b.dataset.i]; $("#q").value = a.question; show(a); } };
+}
+
 async function askQ(e) {
   e.preventDefault(); const q = $("#q").value.trim() || $("#q").placeholder;
+  if (!LIVE) {
+    const a = RECORDED && RECORDED.answers.find(x => x.question.toLowerCase() === q.toLowerCase());
+    if (a) return show(a);
+    $("#answer").innerHTML = `<p class="note">Typed questions need the live Db2 and Granite (run <code>docker compose up</code>). In this copy, pick one of the recorded questions.</p>`; return;
+  }
   $("#answer").innerHTML = `<p class="note">Granite is writing SQL…</p>`;
-  const r = await (await fetch("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({question:q})})).json();
+  let r;
+  try { const res = await fetch("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({question:q})}); r = await res.json(); }
+  catch { $("#answer").innerHTML = `<p class="note">The question service did not answer. Is the app running?</p>`; return; }
+  show(r);
+}
+
+function show(r) {
   if (r.refused) { $("#answer").innerHTML = `<div class="refuse"><b>Refused.</b> ${esc(r.why)}</div>${r.sql ? `<div class="sql">${esc(r.sql)}</div>` : ""}`; return; }
   $("#answer").innerHTML = `<div class="sql">${esc(r.sql)}</div><div class="tablewrap"><table><tr>${r.columns.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>${r.rows.map(row=>`<tr>${row.map(c=>`<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`;
 }

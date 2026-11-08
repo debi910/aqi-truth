@@ -58,3 +58,4 @@ a{color:var(--blue)}
 .picker label{max-width:100%}select{max-width:100%}
 .cell.bad{background:var(--red)}.c.bad{background:var(--red)}
 @media (max-width:760px){.stats{grid-template-columns:1fr 1fr}.stat{border-right:0;padding-right:8px}.stat b{font-size:28px}}
+#askquick{margin:10px 0 14px}
