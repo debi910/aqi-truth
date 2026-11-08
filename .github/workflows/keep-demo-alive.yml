@@ -61,6 +61,7 @@ jobs:
             [ -n "$u" ] && break; sleep 10
           done
           echo "tunnel: ${u:-none}"; [ -n "$u" ] || exit 0
+          echo "tunnel health: $(curl -s -m 20 "$u/api/health")"
           cur=$(GH_TOKEN=$PUB_TOKEN gh api "repos/${{ github.repository }}/contents/endpoint.json?ref=endpoint" -q '.content' | base64 -d 2>/dev/null | grep -oE 'https://[^"]+' || true)
           [ "$cur" = "$u" ] && { echo "already published"; exit 0; }
           sha=$(GH_TOKEN=$PUB_TOKEN gh api "repos/${{ github.repository }}/contents/endpoint.json?ref=endpoint" -q .sha)
