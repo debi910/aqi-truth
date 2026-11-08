@@ -15,11 +15,16 @@ on:
       minutes:
         description: "Heartbeat minutes"
         default: "18"
+      stop:
+        description: "Stop the Codespace now instead (saves free hours)"
+        type: boolean
+        default: false
 env:
   WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
   WINDOW_END: "2026-11-11T04:30:00Z"     # 10:00 AM IST, 11 Nov
 permissions:
   contents: write      # only to publish the second route's address on the 'endpoint' branch
+  actions: read        # to see when the demo was last woken by hand
 concurrency:
   group: keep-demo-alive
   cancel-in-progress: false
@@ -34,8 +39,22 @@ jobs:
         id: win
         run: |
           now=$(date -u +%s); s=$(date -u -d "$WINDOW_START" +%s); e=$(date -u -d "$WINDOW_END" +%s)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || { [ $now -ge $s ] && [ $now -le $e ]; }; then
-            echo "go=1" >> "$GITHUB_OUTPUT"; else echo "Outside window; nothing to do."; echo "go=0" >> "$GITHUB_OUTPUT"; fi
+          if [ "${{ github.event.inputs.stop }}" = "true" ]; then echo "go=0" >> "$GITHUB_OUTPUT"; echo "stop=1" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] || { [ $now -ge $s ] && [ $now -le $e ]; }; then
+            echo "go=1" >> "$GITHUB_OUTPUT"
+          else
+            # Outside the window: stop the Codespace once nobody has woken it by hand for 60 minutes,
+            # so a forgotten demo does not burn the free Codespaces hours.
+            last=$(GH_TOKEN=${{ github.token }} gh api "repos/${{ github.repository }}/actions/workflows/keep-demo-alive.yml/runs?event=workflow_dispatch&per_page=1" -q '.workflow_runs[0].created_at' 2>/dev/null)
+            age=$(( now - $(date -u -d "${last:-1970-01-01}" +%s) ))
+            echo "Outside window; last manual wake ${last:-never} ($((age/60)) min ago)."; echo "go=0" >> "$GITHUB_OUTPUT"
+            [ $age -gt 3600 ] && echo "stop=1" >> "$GITHUB_OUTPUT" || true
+          fi
+      - name: Stop the Codespace (outside the window and idle, or asked)
+        if: steps.win.outputs.stop == '1'
+        run: |
+          gh codespace list -R "${{ github.repository }}" --json name,state -q '.[] | select(.state=="Available") | .name' | while read -r n; do
+            echo "stopping $n"; gh codespace stop -c "$n"; done
       - name: Find the Codespace
         if: steps.win.outputs.go == '1'
         id: cs
