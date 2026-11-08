@@ -49,4 +49,4 @@ jobs:
         if: steps.win.outputs.go == '1'
         run: |
           gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
-            'for i in $(seq 1 18); do printf "%s " "$(date +%H:%M)"; curl -s -m 20 localhost:8000/api/health || echo "app starting"; echo; sleep 60; done'
+            'for i in $(seq 1 18); do printf "%s " "$(date +%H:%M)"; curl -s -m 20 localhost:8000/api/health || { echo "app starting: $(tail -n 1 /tmp/aqi-start.log 2>/dev/null | cut -c1-160)"; }; echo; sleep 60; done; cd /workspaces/aqi-truth && docker compose ps -a --format "{{.Service}} {{.State}} {{.Status}}"; docker compose logs --tail 5 setup 2>/dev/null | cut -c1-200'
