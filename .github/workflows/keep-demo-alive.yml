@@ -52,4 +52,4 @@ jobs:
         if: steps.win.outputs.go == '1'
         run: |
           gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
-            'for i in $(seq 1 ${{ github.event.inputs.minutes || '18' }}); do printf "%s " "$(date +%H:%M)"; curl -s -m 20 localhost:8000/api/health || { echo "app starting: $(tail -n 1 /tmp/aqi-start.log 2>/dev/null | cut -c1-160)"; }; echo; sleep 60; done; cd /workspaces/aqi-truth && docker compose ps -a --format "{{.Service}} {{.State}} {{.Status}}"; docker compose logs --tail 5 setup 2>/dev/null | cut -c1-200'
+            'for i in $(seq 1 ${{ github.event.inputs.minutes || '18' }}); do printf "%s " "$(date +%H:%M)"; curl -s -m 20 localhost:8000/api/health || { echo "app starting: $(tail -n 1 /tmp/aqi-start.log 2>/dev/null | cut -c1-160)"; }; echo; sleep 60; done; cd /workspaces/aqi-truth && docker compose ps -a --format "{{.Service}} {{.State}} {{.Status}}"; echo "raw station-month files: $(ls data/raw 2>/dev/null | grep -c csv$) of 140; full load done: $([ -f data/.full_loaded ] && echo yes || echo no)"; docker ps --format "{{.Names}}" | grep run | xargs -r -I{} docker logs --tail 3 {} 2>&1 | cut -c1-200'
