@@ -56,6 +56,7 @@ jobs:
           echo "--- local POST"; gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- "curl -s -m 150 -w ' [%{http_code} %{time_total}s]' -X POST localhost:8000/api/ask -H 'content-type: application/json' -d '$Q' | cut -c1-600"; echo
           U="https://${{ steps.cs.outputs.name }}-8000.app.github.dev"
           echo "--- public preflight"; curl -s -m 30 -o /dev/null -D - -X OPTIONS "$U/api/ask" -H "Origin: https://debi910.github.io" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type" | grep -iE "^HTTP|access-control|location" || true
+          echo "--- public stream (seconds since start, event)"; s0=$(date +%s.%N); curl -sN -m 150 -X POST "$U/api/ask/stream" -H "Origin: https://debi910.github.io" -H "content-type: application/json" -d '{"question":"How many station-days were suspect in December?","fresh":true}' | while IFS= read -r l; do printf '%5.1f %s\n' "$(echo "$(date +%s.%N) - $s0" | bc)" "$(echo "$l" | cut -c1-90)"; done | awk '!/"tok"/ || ++n<=3'
           echo "--- public POST"; curl -s -m 150 -w ' [%{http_code} %{time_total}s]' -X POST "$U/api/ask" -H "Origin: https://debi910.github.io" -H "content-type: application/json" -d "$Q" | cut -c1-600; echo
       - name: Heartbeat for 18 minutes
         if: steps.win.outputs.go == '1'
