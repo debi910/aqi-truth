@@ -208,11 +208,11 @@ td .ok{color:var(--green)}td .no{color:var(--red)}
 .timer{margin-top:14px;font:500 13px var(--mono);color:var(--mute);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .timer b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
 .answer{margin-top:14px}
-.sqlbox{position:relative;font:13.5px/1.55 var(--mono);background:var(--ink);color:var(--paper);padding:14px 16px;border-radius:6px;white-space:pre-wrap;word-break:break-word;margin:0 0 12px;min-height:50px}
+.sqlbox{position:relative;font:13.5px/1.55 var(--mono);background:#191814;color:#f5f2ea;box-shadow:inset 0 0 0 1px var(--rule);padding:14px 16px;border-radius:6px;white-space:pre-wrap;word-break:break-word;margin:0 0 12px;min-height:50px}
 .sqlbox .k{color:#f2b56b}
-.sqlbox .caret{display:inline-block;width:8px;height:1.1em;background:var(--paper);vertical-align:-2px;animation:blink 1s steps(1) infinite;margin-left:1px}
+.sqlbox .caret{display:inline-block;width:8px;height:1.1em;background:#f5f2ea;vertical-align:-2px;animation:blink 1s steps(1) infinite;margin-left:1px}
 @keyframes blink{50%{opacity:0}}
-.sqlbox .cap{position:absolute;top:8px;right:10px;font:500 10.5px var(--mono);color:color-mix(in srgb,var(--paper) 55%,transparent);text-transform:uppercase;letter-spacing:.06em}
+.sqlbox .cap{position:absolute;top:8px;right:10px;font:500 10.5px var(--mono);color:#9d978a;text-transform:uppercase;letter-spacing:.06em}
 .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
 .refuse{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--rule);border-left:3px solid var(--red);background:var(--card);padding:12px 14px;border-radius:6px}
 .refuse .ic{color:var(--red);margin-top:3px}
