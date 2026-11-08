@@ -43,7 +43,7 @@ jobs:
         if: steps.win.outputs.go == '1'
         run: |
           gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
-            'cd /workspaces/aqi-truth && (pgrep -f codespace_start.sh >/dev/null || nohup bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 &) ; sleep 2; tail -n 3 /tmp/aqi-start.log'
+            'cd /workspaces/aqi-truth && git pull -q --ff-only || true; if [ -f /tmp/aqi-start.pid ] && kill -0 "$(cat /tmp/aqi-start.pid)" 2>/dev/null; then echo "start script already running"; else setsid nohup bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 < /dev/null & echo "start script launched"; fi; sleep 5; tail -n 3 /tmp/aqi-start.log'
           gh codespace ports visibility 8000:public -c "${{ steps.cs.outputs.name }}" || true
       - name: Heartbeat for 18 minutes
         if: steps.win.outputs.go == '1'

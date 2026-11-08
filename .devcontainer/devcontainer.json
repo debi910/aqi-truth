@@ -20,5 +20,5 @@
       "onAutoForward": "silent"
     }
   },
-  "postStartCommand": "bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 &"
+  "postStartCommand": "setsid nohup bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 < /dev/null &"
 }

@@ -2,7 +2,9 @@
 # Starts the full AQI Truth stack inside a GitHub Codespace and makes port 8000 public.
 # Runs automatically on every Codespace start (see .devcontainer/devcontainer.json); log: /tmp/aqi-start.log
 set -euo pipefail
+echo $$ > /tmp/aqi-start.pid
 cd "$(dirname "$0")/.."
+echo "start $(date -u +%H:%M:%S)"
 if [ ! -f .env ]; then
   cp .env.example .env
   sed -i "s/^DB2_PASSWORD=.*/DB2_PASSWORD=$(openssl rand -hex 12)/; s/^DB2_READER_PASSWORD=.*/DB2_READER_PASSWORD=$(openssl rand -hex 12)/" .env
@@ -11,6 +13,7 @@ fi
 URL="https://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}"
 grep -q '^ALLOWED_ORIGINS=' .env || echo "ALLOWED_ORIGINS=https://debi910.github.io,${URL}" >> .env
 until docker info >/dev/null 2>&1; do sleep 2; done
+echo "docker ready; starting compose"
 docker compose up -d --build
 until [ "$(docker compose ps -a setup --format '{{.State}}')" = "exited" ]; do sleep 15; done
 if [ ! -f data/.full_loaded ]; then
