@@ -249,6 +249,6 @@ The tests run against a real Db2, not mocks. They check: CPCB sub-index values; 
 ## Team Members & Credits
 | Name | GitHub Handle | Role / Contribution |
 |---|---|---|
-| Debi | [@debi910](https://github.com/debi910) | Solo entrant: idea, Db2 design, build, evaluation |
+| Debi Prasad Samal | [@debi910](https://github.com/debi910) | Solo entrant: idea, Db2 design, build, evaluation |
 
 Built with help from Claude (Anthropic) as a coding assistant; all numbers come from the code and data in this repository.
