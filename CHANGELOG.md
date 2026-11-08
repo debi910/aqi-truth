@@ -39,3 +39,4 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - Question box: AQI rankings now use `DESC NULLS LAST` so refused (NULL) days never rank first. 23 tests pass.
 - Question-box eval rerun after the view and ranking fixes: 18/20, 8/8 attacks held, no rows changed.
 - GitHub Codespaces option (`.devcontainer/`, `deploy/codespace_start.sh`): full stack with a public HTTPS port, no card needed. `load.py --if-empty` so the setup job never wipes a loaded database on restart.
+- `deploy/keepalive.sh`: Codespace terminal heartbeat for the judging window.
