@@ -157,7 +157,7 @@ BEGIN
          CASE WHEN CONC IS NOT NULL THEN 1 ELSE 0 END FROM SESSION.PSTAT
   UNION ALL
   SELECT P_RUN_ID, PARAM, 'PLAUSIBLE',
-         RTRIM(CHAR(BAD_RAW)) || ' readings outside physical range' || COALESCE(' (e.g. ' || VARCHAR(WORST_RAW) || ')', ''),
+         RTRIM(CHAR(BAD_RAW)) || ' readings outside physical range' || COALESCE(' (e.g. ' || VARCHAR(DECIMAL(WORST_RAW, 31, 2)) || ')', ''),
          'AQT-PLAUSIBLE', CASE WHEN BAD_RAW = 0 THEN 1 ELSE 0 END FROM SESSION.PSTAT
   UNION ALL
   SELECT P_RUN_ID, PARAM, 'STUCK', RTRIM(CHAR(FLAT_H)) || ' hours in identical-value runs', 'AQT-STUCK',
