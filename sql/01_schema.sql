@@ -10,19 +10,6 @@ CREATE TABLE AQ.STATION (
   LON          DECIMAL(9,6)
 )@
 
--- Facts about a station that hold for a period of real-world time (application-period temporal table).
--- e.g. siting violation found by CAG, operator change, known outage.
-CREATE TABLE AQ.STATION_FACT (
-  STATION_ID   INTEGER NOT NULL REFERENCES AQ.STATION,
-  FACT_TYPE    VARCHAR(30) NOT NULL,
-  DETAIL       VARCHAR(500) NOT NULL,
-  SOURCE_URL   VARCHAR(400) NOT NULL,
-  VALID_FROM   DATE NOT NULL,
-  VALID_TO     DATE NOT NULL,
-  PERIOD BUSINESS_TIME (VALID_FROM, VALID_TO),
-  PRIMARY KEY (STATION_ID, FACT_TYPE, BUSINESS_TIME WITHOUT OVERLAPS)
-)@
-
 -- Hourly readings as published. System-period temporal: every later revision or deletion
 -- of a published hour is kept in READING_HIST and can be queried AS OF any past time.
 CREATE TABLE AQ.READING (

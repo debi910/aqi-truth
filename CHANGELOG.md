@@ -22,3 +22,11 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - Added FastAPI app (`src/app.py`): station picker, verdict card, 24-hour evidence grid, ledger, calendar, guarded question box.
 - Added web UI (`web/`) with a static snapshot mode so the site works on free static hosting without Db2 running.
 - Added `scripts/export_snapshot.py`; snapshot covers 1,154 station-days exported from the real Db2 audit run.
+
+## 2026-11-08 (night)
+- pytest suite against real Db2 (`tests/`): sub-index, golden-path refusal, append-only triggers, AQREADER denied base tables, temporal history, explanation guard, SQL guard. 21 passing.
+- One-command setup: `src/load.py` (schema + load + MERGE + audit + rule embeddings), `docker-compose.yml` (Db2, Ollama with Granite, setup job, app), `Dockerfile`, `.env.example`, `scripts/pull_models.py`, gzipped 3-station October 2025 sample in `data/sample/`. Tested from scratch in an isolated Compose project; sample results match the full run on 91/93 station-days (the 2 differences are 31 Oct month-edge hours).
+- Removed the unused business-time table AQ.STATION_FACT.
+- `src/ask.py`: Db2 errors raised while fetching rows now return a refusal instead of a crash.
+- Question-box eval (`eval/ask_eval.py`): 20 gold questions + 8 attack prompts.
+- README rewritten in the official template's layout; `architecture.md` and `submission.json` added; README screenshots.

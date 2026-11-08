@@ -1,7 +1,7 @@
 """Normalise OpenAQ archive CSVs into Db2 load files.
 Usage: python src/prepare.py RAW_DIR OUT_DIR
 Writes stations.del and readings.del (comma-delimited, Db2 LOAD/IMPORT friendly)."""
-import csv, glob, os, re, sys
+import csv, glob, gzip, os, re, sys
 
 def operator(name):
     m = re.search(r"-\s*(DPCC|CPCB|IMD|IITM|MHUA)\b", name)
@@ -12,8 +12,9 @@ def main(raw, out):
     stations, n = {}, 0
     with open(os.path.join(out, "readings.del"), "w", newline="") as f:
         w = csv.writer(f)
-        for path in sorted(glob.glob(os.path.join(raw, "loc*.csv"))):
-            for r in csv.reader(open(path, encoding="utf-8")):
+        for path in sorted(glob.glob(os.path.join(raw, "loc*.csv")) + glob.glob(os.path.join(raw, "loc*.csv.gz"))):
+            opener = gzip.open if path.endswith(".gz") else open
+            for r in csv.reader(opener(path, "rt", encoding="utf-8")):
                 if len(r) < 9 or r[0] == "location_id":
                     continue
                 lid, _sensor, name, dt, lat, lon, param, unit, val = r[:9]

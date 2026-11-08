@@ -62,10 +62,11 @@ def ask(question, conn=None):
     cur = conn.cursor()
     try:
         cur.execute(sql)
+        cols = [d[0] for d in cur.description]
+        data = [list(r) for r in cur.fetchall()]
     except Exception as e:
         return dict(refused=True, why=f"Db2 rejected the query: {str(e)[-160:]}", sql=sql)
-    cols = [d[0] for d in cur.description]
-    return dict(refused=False, sql=sql, columns=cols, rows=[list(r) for r in cur.fetchall()])
+    return dict(refused=False, sql=sql, columns=cols, rows=data)
 
 if __name__ == "__main__":
     print(ask(" ".join(sys.argv[1:])))
