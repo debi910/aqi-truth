@@ -41,3 +41,5 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - GitHub Codespaces option (`.devcontainer/`, `deploy/codespace_start.sh`): full stack with a public HTTPS port, no card needed. `load.py --if-empty` so the setup job never wipes a loaded database on restart.
 - `deploy/keepalive.sh`: Codespace terminal heartbeat for the judging window.
 - Scheduled GitHub Actions workflow `keep-demo-alive` restarts and pings the demo Codespace every 20 minutes during the judging window (needs a CODESPACE_TOKEN secret); sshd added to the devcontainer.
+- Fix: the full load in the Codespace stopped with SQL0964C (transaction log full) because one MERGE moved 3.27M rows. `load.py` now runs the same MERGE one station at a time with a commit after each, audits one month per commit, and raises LOGSECOND online. Tested on the sample: same 46/34/13 verdicts as before.
+- Keep-alive job now probes `/api/ask` locally and through the public port (CORS preflight returns 200; a question takes about 55 s) and prints the start log.

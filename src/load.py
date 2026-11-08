@@ -2,6 +2,7 @@
 Usage: python src/load.py RAW_DIR FROM_DAY TO_DAY [--schema AQ] [--no-embed]
 Example (sample shipped in the repo): python src/load.py data/sample 2025-10-01 2025-10-31"""
 import argparse, csv, os, sys, tempfile, time
+from datetime import date, timedelta
 sys.path.insert(0, os.path.dirname(__file__))
 from db import connect, run_script
 import prepare
@@ -50,11 +51,27 @@ def main():
                 cur.executemany(f"INSERT INTO {s}.STAGE_READING VALUES (?, RTRIM(CAST(? AS VARCHAR(12))), ?, ?, RTRIM(CAST(? AS VARCHAR(10))))", batch); batch = []
     if batch: cur.executemany(f"INSERT INTO {s}.STAGE_READING VALUES (?, RTRIM(CAST(? AS VARCHAR(12))), ?, ?, RTRIM(CAST(? AS VARCHAR(10))))", batch)
     conn.commit()
-    run_script(conn, os.path.join(ROOT, "sql", "03_merge.sql"), schema=None if s == "AQ" else s)
+    try:    # more secondary log files (an online change), so a big first load does not hit SQL0964C
+        cur.callproc("SYSPROC.ADMIN_CMD", ("UPDATE DB CFG USING LOGSECOND 200",)); conn.commit()
+    except Exception as e:
+        conn.rollback(); print("could not raise LOGSECOND:", str(e)[:120])
+    # The same MERGE as sql/03_merge.sql, run one station at a time with a commit after each,
+    # so the full load (3M+ rows) never needs the whole transaction log at once.
+    merge = open(os.path.join(ROOT, "sql", "03_merge.sql"), encoding="utf-8").read().split("@")[0]
+    merge = "\n".join(l for l in merge.splitlines() if not l.strip().startswith("--")).replace("AQ.", s + ".")
+    merge = merge.replace(f"FROM {s}.STAGE_READING)", f"FROM {s}.STAGE_READING WHERE STATION_ID = ?)")
+    cur.execute(f"SELECT DISTINCT STATION_ID FROM {s}.STAGE_READING ORDER BY 1")
+    for (sid,) in cur.fetchall():
+        cur.execute(merge, (sid,)); conn.commit()
     cur.execute(f"SELECT COUNT(*) FROM {s}.READING"); print(f"{cur.fetchone()[0]} readings merged in {time.time()-t:.0f}s")
     t = time.time()
+    d, end = date.fromisoformat(a.day_from), date.fromisoformat(a.day_to)
+    # the hourly layer runs over the whole range at once, so stuck runs and jumps are seen across month edges
     cur.callproc(f"{s}.BUILD_HOURLY", (f"{a.day_from} 00:00:00", f"{a.day_to} 23:59:59")); conn.commit()
-    cur.callproc(f"{s}.AUDIT_RANGE", (a.day_from, a.day_to)); conn.commit()
+    while d <= end:     # each station-day is audited independently, so commit once per month
+        last = min(end, (d.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1))
+        cur.callproc(f"{s}.AUDIT_RANGE", (d.isoformat(), last.isoformat())); conn.commit()
+        print(f"audited {d} to {last}"); d = last + timedelta(days=1)
     cur.execute(f"SELECT STATUS, COUNT(*) FROM {s}.V_DAY GROUP BY STATUS ORDER BY 1")
     print(f"audit done in {time.time()-t:.0f}s:", dict(cur.fetchall()))
     if not a.no_embed and s == "AQ":
