@@ -13,7 +13,16 @@ fi
 URL="https://${CODESPACE_NAME:-unknown}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
 grep -q '^ALLOWED_ORIGINS=' .env || echo "ALLOWED_ORIGINS=https://debi910.github.io,${URL}" >> .env
 until docker info >/dev/null 2>&1; do sleep 2; done
-echo "docker ready; starting compose"
+echo "docker ready"
+# Second public route: a Cloudflare quick tunnel (no account, no card) for networks that block *.github.dev.
+# Its random https://<words>.trycloudflare.com address goes to /tmp/tunnel.url; the keep-alive job publishes it
+# on the 'endpoint' branch, where the GitHub Pages site looks for it.
+if ! pgrep -x cloudflared >/dev/null; then
+  [ -x /tmp/cloudflared ] || { curl -fsSL -o /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && chmod +x /tmp/cloudflared; } || true
+  [ -x /tmp/cloudflared ] && setsid nohup /tmp/cloudflared tunnel --no-autoupdate --protocol http2 --url http://localhost:8000 > /tmp/cloudflared.log 2>&1 < /dev/null &
+fi
+( for i in $(seq 1 60); do u=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1); [ -n "$u" ] && { echo "$u" > /tmp/tunnel.url; break; }; sleep 2; done ) &
+echo "starting compose"
 docker compose up -d --build
 until [ "$(docker compose ps -a setup --format '{{.State}}')" = "exited" ]; do sleep 15; done
 if [ ! -f data/.full_loaded ]; then

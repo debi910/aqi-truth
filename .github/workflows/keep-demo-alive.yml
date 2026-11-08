@@ -18,6 +18,8 @@ on:
 env:
   WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
   WINDOW_END: "2026-11-11T04:30:00Z"     # 10:00 AM IST, 11 Nov
+permissions:
+  contents: write      # only to publish the second route's address on the 'endpoint' branch
 concurrency:
   group: keep-demo-alive
   cancel-in-progress: false
@@ -48,6 +50,22 @@ jobs:
           gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
             'cd /workspaces/aqi-truth && git pull -q --ff-only || true; if [ -f /tmp/aqi-start.pid ] && kill -0 "$(cat /tmp/aqi-start.pid)" 2>/dev/null; then echo "start script already running"; else CODESPACE_NAME=${{ steps.cs.outputs.name }} setsid nohup bash deploy/codespace_start.sh >> /tmp/aqi-start.log 2>&1 < /dev/null & echo "start script launched"; fi; sleep 5; tail -n 3 /tmp/aqi-start.log'
           gh codespace ports visibility 8000:public -c "${{ steps.cs.outputs.name }}" || true
+      - name: Publish the second route (Cloudflare tunnel address) for the Pages site
+        if: steps.win.outputs.go == '1'
+        continue-on-error: true
+        env:
+          PUB_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 18); do
+            u=$(gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- 'cat /tmp/tunnel.url 2>/dev/null' | tr -d '\r\n')
+            [ -n "$u" ] && break; sleep 10
+          done
+          echo "tunnel: ${u:-none}"; [ -n "$u" ] || exit 0
+          cur=$(GH_TOKEN=$PUB_TOKEN gh api "repos/${{ github.repository }}/contents/endpoint.json?ref=endpoint" -q '.content' | base64 -d 2>/dev/null | grep -oE 'https://[^"]+' || true)
+          [ "$cur" = "$u" ] && { echo "already published"; exit 0; }
+          sha=$(GH_TOKEN=$PUB_TOKEN gh api "repos/${{ github.repository }}/contents/endpoint.json?ref=endpoint" -q .sha)
+          body=$(printf '{"api":"%s","updated":"%s"}\n' "$u" "$(date -u +%FT%TZ)" | base64 -w0)
+          GH_TOKEN=$PUB_TOKEN gh api -X PUT "repos/${{ github.repository }}/contents/endpoint.json" -f branch=endpoint -f message="Second route: $u" -f content="$body" -f sha="$sha" -q .commit.sha
       - name: Probe the question box (local and through the public port, as the Pages site calls it)
         if: steps.win.outputs.go == '1'
         continue-on-error: true

@@ -149,7 +149,7 @@ docker compose logs -f setup  # wait for "rule texts embedded"
 
 The `setup` job builds the schema, loads the shipped sample (3 stations, October 2025: Chandni Chowk, ITO, Anand Vihar), runs the audit and embeds the rule texts. On the sample, 91 of 93 station-days match the full run exactly; the other two (31 Oct) differ by a few AQI points because the sample has no November hours.
 
-**Hosted demo in GitHub Codespaces** (free, no card): on the repo page click **Code → Codespaces → Create codespace on main** (choose the 4-core machine). The stack starts by itself (`deploy/codespace_start.sh`, about 25 minutes the first time) and port 8000 is made public. The `keep-demo-alive` workflow keeps the Codespace awake during the judging window. Some networks block `*.github.dev`; there the page falls back to the labelled export.
+**Hosted demo in GitHub Codespaces** (free, no card): on the repo page click **Code → Codespaces → Create codespace on main** (choose the 4-core machine). The stack starts by itself (`deploy/codespace_start.sh`, about 25 minutes the first time) and port 8000 is made public. Some networks block `*.github.dev`, so the script also opens a free Cloudflare quick tunnel (no account) as a second route; the `keep-demo-alive` workflow publishes its address on the `endpoint` branch and the Pages site uses whichever route answers first. The workflow keeps the Codespace awake during the judging window.
 
 **Hosted demo on a VM** (Ubuntu, 8 GB RAM, ports 80/443 open, a public DNS name):
 ```bash
@@ -232,7 +232,7 @@ The tests run against a real Db2, not mocks. They check: CPCB sub-index values; 
 - **No official ground truth** of which station-days CPCB itself rejected; the fault-injection test measures detection on planted faults, not on real failures.
 - **Revisions:** the temporal table records revisions on reload, but we have only one snapshot of the archive, so no real revisions are shown yet.
 - **Question box** uses a small local model on CPU: a new question takes about 20–30 s, and it can misread questions (see the eval). Wrong answers are still read-only and limited to the two views.
-- **Hosting** is a free GitHub Codespace with no uptime guarantee, reached through `*.github.dev`, which some networks block.
+- **Hosting** is a free GitHub Codespace plus a Cloudflare quick tunnel; neither has an uptime guarantee.
 - **Next:** daily ingestion so revisions are captured as they happen, the other Indian cities in the same archive, and a public "refusal feed" newsrooms can embed.
 
 ---

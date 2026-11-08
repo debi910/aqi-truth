@@ -23,7 +23,10 @@ async function get(path, snap) {
 async function init() {
   const probe = async base => { const r = await fetch(base + "/api/health", {signal: AbortSignal.timeout(9000)});
     if (!r.ok || !(await r.json()).db2) throw 0; return base; };
-  try { API = await probe(API); LIVE = true; } catch { LIVE = false; }
+  // Try both routes to the live server at once; keep the first that answers with a healthy Db2.
+  const alt = window.AQT_ALT ? fetch(window.AQT_ALT, {cache: "no-store", signal: AbortSignal.timeout(5000)}).then(r => r.json())
+    .then(j => j.api ? probe(j.api.replace(/\/$/, "")) : Promise.reject(0)) : Promise.reject(0);
+  try { API = await Promise.any([probe(API), alt]); LIVE = true; } catch { LIVE = false; }
   const st = $("#status"); st.dataset.state = LIVE ? "live" : "offline";
   st.querySelector("span").textContent = LIVE ? "Live · Db2 + Granite" : "Offline export";
   st.title = LIVE ? "Every verdict, explanation and answer is computed now by IBM Db2 and IBM Granite" + (API ? " on " + new URL(API).host : "")
