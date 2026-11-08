@@ -30,3 +30,5 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - `src/ask.py`: Db2 errors raised while fetching rows now return a refusal instead of a crash.
 - Question-box eval (`eval/ask_eval.py`): 20 gold questions + 8 attack prompts.
 - README rewritten in the official template's layout; `architecture.md` and `submission.json` added; README screenshots.
+- Question box hardened: short station names are matched with LIKE, SQL comments stripped, wider out-of-scope filter (safety, children, blame), prompt hints on NULL AQI and failed checks. Eval: 12/20 before, 17/20 after (development score on the same set); 8/8 attack prompts held.
+- GitHub Pages live: https://debi910.github.io/aqi-truth/

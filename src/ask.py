@@ -9,17 +9,20 @@ from llm import generate
 import ibm_db, ibm_db_dbi
 
 ALLOWED = {"V_DAY", "V_CHECK"}
-OUT_OF_SCOPE = re.compile(r"\b(predict|forecast|tomorrow|next week|will it|should i|safe to|health|mask|fraud|who is responsible)\b", re.I)
+OUT_OF_SCOPE = re.compile(r"\b(predict\w*|forecast\w*|tomorrow|next week|will it|will the|should i|safe|unsafe|health\w*|child\w*|kids?|mask|fraud|who is responsible|responsible for)\b", re.I)
 SCHEMA = """Db2 views (schema AQ):
 AQ.V_DAY(STATION VARCHAR, OPERATOR VARCHAR, DAY DATE, STATUS VARCHAR -- 'VALID'|'SUSPECT'|'NOT_COMPUTABLE',
          AQI SMALLINT -- audited AQI, NULL when NOT_COMPUTABLE, NAIVE_AQI SMALLINT -- plain average, PROMINENT VARCHAR, VALID_PARAMS SMALLINT, REASON VARCHAR)
 AQ.V_CHECK(STATION VARCHAR, DAY DATE, PARAM VARCHAR -- pm25|pm10|no2|so2|o3|co|ALL, CHECK_CODE VARCHAR -- COVERAGE|PLAUSIBLE|STUCK|JUMP|SUBINDEX|MIN_PARAMS,
            OBSERVED VARCHAR, PASSED SMALLINT -- 1 passed 0 failed, RULE_REF VARCHAR)
-Station names look like 'Chandni Chowk, Delhi - IITM' (match with LIKE '%Chandni%'). Data covers 2025-09-01 to 2025-12-31."""
+Station names look like 'Chandni Chowk, Delhi - IITM' (always match with LIKE '%Chandni Chowk%'). Data covers 2025-09-01 to 2025-12-31.
+AQI is NULL on NOT_COMPUTABLE days: add AQI IS NOT NULL when ranking by AQI. A failed check has PASSED = 0."""
 EXAMPLES = """Q: Which stations had the most days with no computable AQI?
 SQL: SELECT STATION, COUNT(*) AS DAYS FROM AQ.V_DAY WHERE STATUS = 'NOT_COMPUTABLE' GROUP BY STATION ORDER BY DAYS DESC
 Q: On Diwali 2025 (21 October) which stations were suspect?
-SQL: SELECT STATION, AQI, NAIVE_AQI FROM AQ.V_DAY WHERE DAY = '2025-10-21' AND STATUS = 'SUSPECT'"""
+SQL: SELECT STATION, AQI, NAIVE_AQI FROM AQ.V_DAY WHERE DAY = '2025-10-21' AND STATUS = 'SUSPECT'
+Q: How many jump checks failed at Okhla in November?
+SQL: SELECT COUNT(*) FROM AQ.V_CHECK WHERE STATION LIKE '%Okhla%' AND CHECK_CODE = 'JUMP' AND PASSED = 0 AND DAY BETWEEN '2025-11-01' AND '2025-11-30'"""
 
 def reader():
     dsn = (f"DATABASE={os.getenv('DB2_DATABASE','AQIDB')};HOSTNAME={os.getenv('DB2_HOST','localhost')};PORT={os.getenv('DB2_PORT','50000')};"
@@ -33,6 +36,9 @@ def check_sql(sql):
     sql = sql.strip().rstrip(";")
     # Models often write LIMIT n; Db2 uses FETCH FIRST n ROWS ONLY.
     sql = re.sub(r"\s+LIMIT\s+(\d+)\s*$", r" FETCH FIRST \1 ROWS ONLY", sql, flags=re.I)
+    sql = re.sub(r"--[^\n]*", "", sql)
+    # Users type short names ("ITO", "Punjabi Bagh"); stored names are longer, so exact matches become LIKE.
+    sql = re.sub(r"\bSTATION\s*=\s*'([^',]+)[^']*'", lambda m: f"STATION LIKE '%{m.group(1).strip()}%'", sql, flags=re.I)
     try:
         trees = sqlglot.parse(re.sub(r"FETCH\s+FIRST\s+\d+\s+ROWS\s+ONLY", "", sql, flags=re.I))
     except Exception as e:
