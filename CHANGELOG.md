@@ -17,3 +17,8 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - AI layer: IBM Granite 4.0 micro + granite-embedding-278m-multilingual run locally in Ollama (GGUF from Docker Hub `ai/` models; `ollama/` Modelfiles). Rule paragraphs (CPCB AQI method, CAG findings, our checks) embedded into Db2 `VECTOR(768)` (`src/rules.py`, `data/rules.json`).
 - `src/explain.py`: Granite explains a verdict from the evidence ledger only; Db2 VECTOR_DISTANCE retrieval must agree with the rule the procedure cited; output rejected (template used) if it adds numbers, gives advice/predictions, or names the wrong CPCB category. Stored append-only in AQ.EXPLANATION.
 - `src/ask.py` + `sql/05_views.sql`: natural-language questions → one SELECT checked by sqlglot (single SELECT, only AQ.V_DAY/AQ.V_CHECK, row cap) → run as Db2 user AQREADER that can read only those views. Out-of-scope questions (forecasts, health advice, blame) are refused.
+
+## 2026-11-08 (later)
+- Added FastAPI app (`src/app.py`): station picker, verdict card, 24-hour evidence grid, ledger, calendar, guarded question box.
+- Added web UI (`web/`) with a static snapshot mode so the site works on free static hosting without Db2 running.
+- Added `scripts/export_snapshot.py`; snapshot covers 1,154 station-days exported from the real Db2 audit run.
