@@ -45,13 +45,14 @@ probe() {
 case "${1:-}" in
   stop) stop_all ;;
   keep)
-    END=$2; PROBE=${3:-0}; T0=$(date -u +%s); LIMIT=$(( T0 + 330 * 60 ))
+    END=$2; PROBE=${3:-0}; T0=$(date -u +%s); LIMIT=$(( T0 + ${RUN_MINUTES:-330} * 60 ))
     NAME=$(cs); [ -n "$NAME" ] || { echo "no Codespace for $REPO"; exit 1; }
     echo "keeping $NAME up until $(date -u -d "@$END" +%FT%TZ) (this run until $(date -u -d "@$(( END < LIMIT ? END : LIMIT ))" +%FT%TZ))"
     ensure_stack; i=0
     while :; do
       now=$(date -u +%s); [ "$now" -ge "$END" ] || [ "$now" -ge "$LIMIT" ] && break
-      if [ $(( i % 10 )) -eq 0 ]; then ensure_stack >/dev/null; publish_tunnel; fi
+      [ $(( i % 10 )) -eq 0 ] && [ "$i" -gt 0 ] && ensure_stack >/dev/null
+      { [ "$i" -lt 4 ] || [ $(( i % 10 )) -eq 0 ]; } && publish_tunnel
       [ "$i" -eq 5 ] && [ "$PROBE" = "1" ] && probe
       printf '%s %s\n' "$(date -u +%H:%M)" "$(ssh_cs 'curl -s -m 20 localhost:8000/api/health || echo starting' | tr -d '\r')"
       i=$(( i + 1 )); sleep 50
@@ -59,7 +60,7 @@ case "${1:-}" in
     now=$(date -u +%s)
     if [ "$now" -lt "$END" ]; then
       echo "handing over to a new run until $(date -u -d "@$END" +%FT%TZ)"
-      GH_TOKEN=$PUB_TOKEN gh api -X POST "repos/$REPO/actions/workflows/keep-demo-alive.yml/dispatches" -f ref=main -f "inputs[until]=$(date -u -d "@$END" +%FT%TZ)"
+      GH_TOKEN=$PUB_TOKEN gh api -X POST "repos/$REPO/actions/workflows/keep-demo-alive.yml/dispatches" -f ref=main -f "inputs[until]=$(date -u -d "@$END" +%FT%TZ)" -f "inputs[run_minutes]=${RUN_MINUTES:-330}"
     elif in_window; then echo "judging window open: leaving the Codespace running"
     else echo "done: stopping the Codespace to save hours"; stop_all; fi ;;
   *) echo "usage: $0 stop | keep END [PROBE]"; exit 2 ;;

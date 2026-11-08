@@ -19,6 +19,7 @@ echo "docker ready"
 # on the 'endpoint' branch, where the GitHub Pages site looks for it.
 if ! pgrep -x cloudflared >/dev/null; then
   [ -x /tmp/cloudflared ] || { curl -fsSL -o /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && chmod +x /tmp/cloudflared; } || true
+  rm -f /tmp/tunnel.url   # a new tunnel gets a new address; never publish the old one
   [ -x /tmp/cloudflared ] && setsid nohup /tmp/cloudflared tunnel --no-autoupdate --protocol http2 --url http://localhost:8000 > /tmp/cloudflared.log 2>&1 < /dev/null &
 fi
 ( for i in $(seq 1 60); do u=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1); [ -n "$u" ] && { echo "$u" > /tmp/tunnel.url; break; }; sleep 2; done ) &

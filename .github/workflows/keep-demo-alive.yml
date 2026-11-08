@@ -25,6 +25,9 @@ on:
       until:
         description: "Keep it up until this UTC time (ISO, e.g. 2026-11-11T04:30:00Z); used by the run chain"
         default: ""
+      run_minutes:
+        description: "Longest single run before handing over (testing)"
+        default: "330"
 env:
   WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
   WINDOW_END: "2026-11-11T04:30:00Z"     # 10:00 AM IST, 11 Nov
@@ -42,6 +45,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
       PUB_TOKEN: ${{ github.token }}
+      RUN_MINUTES: ${{ github.event.inputs.run_minutes || '330' }}
     steps:
       - uses: actions/checkout@v4
       - name: Keep up, or stop
