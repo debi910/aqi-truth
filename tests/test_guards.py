@@ -40,3 +40,15 @@ def test_short_station_names_become_like():
 
 def test_aqi_ranking_puts_refused_days_last():
     assert "AQI DESC NULLS LAST" in check_sql("SELECT STATION FROM AQ.V_DAY ORDER BY AQI DESC")
+
+def test_streaming_stops_at_end_of_statement():
+    from ask import sql_done
+    assert sql_done("SELECT COUNT(*) FROM AQ.V_DAY;")
+    assert sql_done("SELECT STATION FROM AQ.V_DAY ORDER BY AQI DESC FETCH FIRST 1 ROWS ONLY")
+    assert sql_done("SELECT 1 FROM AQ.V_DAY\n\nThis query counts")
+    assert not sql_done("SELECT STATION, COUNT(*) FROM AQ.V_DAY WHERE STATUS =")
+
+def test_question_normalisation_for_reuse():
+    import app
+    assert app.norm("  Which station   was worst? ") == app.norm("which station was worst")
+    assert app.norm("Which station was worst?") != app.norm("Which station was best?")

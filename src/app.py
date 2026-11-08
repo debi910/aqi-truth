@@ -1,13 +1,13 @@
 """AQI Truth web API (FastAPI). Serves the page in web/ and reads everything from Db2."""
-import collections, datetime as dt, os, sys, threading, time
+import collections, datetime as dt, decimal, json, os, re, sys, threading, time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(__file__))
-from db import connect, rows
-import explain as ex, ask as asker
+from db import connect, rows, run_script
+import explain as ex, ask as asker, llm
 
 WEB = os.path.join(os.path.dirname(__file__), "..", "web")
 app = FastAPI(title="AQI Truth")
@@ -86,16 +86,132 @@ def day(station: int, day: str, llm: bool = True):
 
 class Q(BaseModel):
     question: str
+    fresh: bool = False      # true: always ask Granite, never reuse earlier SQL
+
+def plain(v):
+    if isinstance(v, decimal.Decimal): return float(v)
+    if isinstance(v, (dt.date, dt.datetime)): return v.isoformat()
+    return v
+
+def norm(q):
+    return re.sub(r"[\s?.!]+$", "", re.sub(r"\s+", " ", q.strip().lower()))[:300]
+
+def log_ask(q, r, source, ms_model=None, ms_db2=None):
+    try:
+        c = conn(); c.cursor().execute(
+            "INSERT INTO AQ.ASK_LOG (QUESTION, QNORM, SQL_TEXT, OUTCOME, SOURCE, MS_MODEL, MS_DB2, N_ROWS) VALUES (?,?,?,?,?,?,?,?)",
+            (q[:300], norm(q), (r.get("sql") or "")[:4000] or None, r.get("outcome", "REFUSED"), source, ms_model, ms_db2,
+             len(r["rows"]) if r.get("rows") is not None else None)); c.commit()
+    except Exception as e:
+        print("ask log failed:", str(e)[:160])
+
+def earlier_sql(q):
+    """SQL Granite wrote for this exact question before and that Db2 answered."""
+    try:
+        r = rows(conn(), """SELECT SQL_TEXT, ASKED_AT FROM AQ.ASK_LOG WHERE QNORM = ? AND OUTCOME = 'ANSWERED' AND SOURCE = 'GRANITE'
+                            ORDER BY ID DESC FETCH FIRST 1 ROW ONLY""", (norm(q),))
+        return (r[0][0], r[0][1]) if r else None
+    except Exception:
+        return None
+
+def run_timed(sql):
+    t = time.time(); r = asker.run(sql); ms = int((time.time() - t) * 1000)
+    if r.get("rows") is not None: r["rows"] = [[plain(c) for c in row] for row in r["rows"]]
+    return r, ms
+
+def ask_events(question, fresh):
+    """The question pipeline as a stream of events, so the page can show each stage as it happens."""
+    yield {"e": "guard"}
+    g = asker.guard(question)
+    if g:
+        log_ask(question, g, "GUARD"); yield {"e": "result", **g}; return
+    prev = None if fresh else earlier_sql(question)
+    if prev:
+        sql, at = prev
+        yield {"e": "reuse", "sql": sql, "at": plain(at)}
+        yield {"e": "db2"}
+        r, ms = run_timed(sql); log_ask(question, r, "REUSED", None, ms)
+        yield {"e": "result", **r, "source": "reused", "reused_from": plain(at), "ms_db2": ms}; return
+    if not LLM_LOCK.acquire(blocking=False):
+        yield {"e": "queue"}
+        LLM_LOCK.acquire()
+    try:
+        yield {"e": "model"}
+        info = {}
+        for piece in llm.stream(asker.prompt(question), max_tokens=200, system=asker.SYSTEM, stop=asker.sql_done):
+            if isinstance(piece, dict): info = piece
+            else: yield {"e": "tok", "t": piece}
+    finally:
+        LLM_LOCK.release()
+    sql = asker.extract(info.get("text", ""))
+    yield {"e": "check", "sql": sql}
+    yield {"e": "db2"}
+    r, ms = run_timed(sql); log_ask(question, r, "GRANITE", info.get("ms_total"), ms)
+    yield {"e": "result", **r, "source": "granite", "ms_model": info.get("ms_total"),
+           "ms_first_token": info.get("ms_first_token"), "prompt_tokens": info.get("prompt_tokens"), "ms_db2": ms}
+
+def check_question(q: Q, request: Request):
+    if len(q.question) > 300: raise HTTPException(400, "question too long")
+    if not q.question.strip(): raise HTTPException(400, "empty question")
+    throttle(request)
+
+@app.post("/api/ask/stream")
+def ask_stream(q: Q, request: Request):
+    check_question(q, request)
+    def gen():
+        try:
+            for ev in ask_events(q.question, q.fresh):
+                yield json.dumps(ev, default=str) + "\n"
+        except Exception as e:
+            yield json.dumps({"e": "result", "refused": True, "why": f"server error: {str(e)[:160]}"}) + "\n"
+    # no-transform / X-Accel-Buffering: ask proxies in front of the app not to hold the stream back
+    return StreamingResponse(gen(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
 
 @app.post("/api/ask")
 def ask_q(q: Q, request: Request):
-    if len(q.question) > 300: raise HTTPException(400, "question too long")
-    throttle(request)
-    with LLM_LOCK:
-        r = asker.ask(q.question)
-    if r.get("rows"):
-        r["rows"] = [[str(c) if isinstance(c, (dt.date, dt.datetime)) else c for c in row] for row in r["rows"]]
-    return r
+    check_question(q, request)
+    out = {}
+    for ev in ask_events(q.question, q.fresh): out = ev
+    out.pop("e", None); return out
+
+@app.get("/api/explain")
+def explain_day(station: int, day: str):
+    """Granite's two sentences for one station-day (stored once, then read from AQ.EXPLANATION)."""
+    return day_payload(station, day, True)["explanation"]
+
+@app.get("/api/asklog")
+def asklog():
+    """Recent questions and how they were answered: a public view of the append-only log."""
+    rs = rows(conn(), """SELECT ASKED_AT, QUESTION, OUTCOME, SOURCE, MS_MODEL, MS_DB2, N_ROWS FROM AQ.ASK_LOG
+                         ORDER BY ID DESC FETCH FIRST 20 ROWS ONLY""")
+    return [dict(at=plain(r[0]), question=r[1], outcome=r[2], source=r[3], ms_model=r[4], ms_db2=r[5], rows=r[6]) for r in rs]
+
+def prepare():
+    """At startup: make sure the question log exists, load Granite into memory, and have Granite answer the sample
+    questions once (logged like any visitor's), so their SQL can be reused instantly."""
+    try:
+        run_script(connect(), os.path.join(os.path.dirname(__file__), "..", "sql", "06_asklog.sql"))
+    except Exception as e:
+        if "SQL0601N" not in str(e): print("ask log setup:", str(e)[:160])
+    for _ in range(120):
+        try: llm.warm(); break
+        except Exception: time.sleep(5)
+    try:
+        samples = [a["question"] for a in json.load(open(os.path.join(WEB, "data", "asks.json")))["answers"]]
+    except Exception:
+        samples = []
+    for q in samples:
+        if asker.guard(q) or earlier_sql(q): continue
+        try:
+            for _ in ask_events(q, True): pass
+        except Exception as e:
+            print("sample question failed:", q, str(e)[:120])
+    print("startup ready: model warm, sample questions answered")
+
+@app.on_event("startup")
+def _startup():
+    if os.getenv("WARM", "1") == "1": threading.Thread(target=prepare, daemon=True).start()
 
 @app.get("/")
 def index():

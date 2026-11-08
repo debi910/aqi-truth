@@ -9,7 +9,7 @@ import prepare
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 POLLUTANTS = {"pm25", "pm10", "no2", "so2", "o3", "co"}
-SCRIPTS = ["00_tablespace.sql", "01_schema.sql", "02_reference.sql", "04_audit.sql", "05_views.sql"]
+SCRIPTS = ["00_tablespace.sql", "01_schema.sql", "02_reference.sql", "04_audit.sql", "05_views.sql", "06_asklog.sql"]
 
 def main():
     ap = argparse.ArgumentParser()

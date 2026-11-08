@@ -25,6 +25,8 @@ services:
   ollama:
     image: ollama/ollama:0.12.6
     restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"      # keep Granite loaded; a reload on CPU costs 10-100 s
     entrypoint: ["/bin/sh", "/entry.sh"]
     volumes:
       - models:/models

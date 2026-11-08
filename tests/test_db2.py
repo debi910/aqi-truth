@@ -64,3 +64,14 @@ def test_explanation_guard_rejects_invented_numbers(conn, monkeypatch):
     monkeypatch.setattr(explain, "generate", lambda *a, **k: "The AQI was 999 and people should stay indoors.")
     out = explain.explain(conn, run_id)
     assert out["model"].startswith("template") and "999" not in out["text"]
+
+def test_question_log_is_append_only_and_hidden_from_reader(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM AQ.ASK_LOG"); assert cur.fetchone()[0] >= 0
+    with pytest.raises(Exception) as e:
+        cur.execute("DELETE FROM AQ.ASK_LOG")
+    conn.rollback()
+    assert "75001" in str(e.value)
+    from ask import reader
+    with pytest.raises(Exception):
+        reader().cursor().execute("SELECT COUNT(*) FROM AQ.ASK_LOG")

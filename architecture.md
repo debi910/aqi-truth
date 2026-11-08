@@ -52,7 +52,8 @@ flowchart LR
 | Triggers raising SQLSTATE | ledger tables | Evidence cannot be edited after the fact, even by the app's own user |
 | `VECTOR(768, FLOAT32)` + `VECTOR_DISTANCE` | `AQ.RULE_TEXT` | Rule retrieval happens in Db2 and is cross-checked against the procedure's citation |
 | Least-privilege authorization ID | `AQREADER` | The natural-language box is safe by database permission, not only by prompt |
-| CHECK constraints | `AQ.VERDICT` | Only the three verdict states can exist |
+| CHECK constraints | `AQ.VERDICT`, `AQ.ASK_LOG` | Only the allowed states can exist |
+| Append-only question log | `AQ.ASK_LOG` | Every natural-language request is on record; identical questions reuse checked SQL so a CPU-only model stays usable |
 
 ## Runtime
 

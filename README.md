@@ -53,7 +53,7 @@ Next to each verdict it stores the **naive AQI** a plain-average dashboard would
 On top of that:
 - **Explanations:** IBM Granite 4.0 micro writes a two-sentence explanation from the ledger. Code rejects it if it adds numbers, gives advice or names the wrong AQI category.
 - **Question box:** ask in plain English ("Which stations had the most days with no computable AQI?"). Granite writes SQL, code checks it, and Db2 runs it as a user that can only read two views.
-- **Web app:** verdict card (naive number struck through next to the Db2 stamp), 24-hour grid per pollutant, the evidence ledger, a 34-station × 122-day calendar, and the question box.
+- **Web app:** a Delhi map of the 34 monitors, a 122-day strip per station, the verdict card (naive number struck through next to the Db2 stamp), the 24-hour grid, the evidence ledger, Granite's explanation, and the question box with a **Live / Recorded** switch. Live answers stream in: the page shows each stage (scope guard, Granite writing SQL token by token, SQL checker, Db2 as `AQREADER`) with a running timer.
 
 ---
 
@@ -99,6 +99,7 @@ Example: **Chandni Chowk, 23 Oct 2025.** From mid-afternoon the monitor reports 
   - `AQ.VERDICT`, `AQ.EVIDENCE`, `AQ.EXPLANATION`: append-only, enforced by triggers raising `SQLSTATE 75001`.
   - `AQ.RULE_TEXT`: CPCB/CAG rule paragraphs with `VECTOR(768, FLOAT32)` embeddings.
   - Views `AQ.V_DAY`, `AQ.V_CHECK`; Db2 user `AQREADER` has `SELECT` on these two views and nothing else.
+  - `AQ.ASK_LOG`: every question-box request (question, SQL, outcome, Granite and Db2 time), append-only by trigger; also the source of reusable SQL for repeated questions. `AQREADER` cannot read it.
 - **Key Queries & Operations:**
   - `AQ.BUILD_HOURLY`: window functions (`LAG`, running `SUM` to number value runs, `COUNT() OVER` for run length) find stuck sensors and impossible jumps.
   - `AQ.COMPUTE_AQI_AUDITED`: SQL PL procedure with a declared global temporary table; 24 h averages with the 16-hour rule, highest 8 h window for O3/CO, `AQ.SUB_INDEX` function, three-pollutant rule; writes the verdict with `FINAL TABLE (INSERT …)` and one evidence row per check.
@@ -116,6 +117,7 @@ More detail and a diagram: [architecture.md](architecture.md).
 - **Models:** IBM **Granite 4.0 micro** (text) and IBM **Granite embedding multilingual 278M** (768-dim), both run locally in Ollama from the GGUF files published on Docker Hub (`ai/granite-4.0-micro`, `ai/granite-embedding-multilingual`). No API key, no cost.
 - **Grounded explanations:** the prompt holds only the verdict and its failed ledger rows. Db2 `VECTOR_DISTANCE` retrieves the nearest rule texts, and code checks that they include the rule the procedure cited (`VECTOR_AGREES` is stored). The reply is rejected, and a template stored instead, if it has any number not in the facts, words like "should", "safe", "health", "forecast" or "fraud", or a CPCB category that does not match.
 - **Guarded questions:** out-of-scope questions (forecasts, health, blame) are refused before any model call. Granite writes SQL; `sqlglot` must parse it as exactly one `SELECT` over `AQ.V_DAY` / `AQ.V_CHECK`; a row cap is added; Db2 runs it as `AQREADER`.
+- **Latency on a CPU (measured on 4 vCPUs):** Granite reads the ~470-token prompt in about 16 s and writes the SQL in about 6 s; Db2 answers in well under a second. A 30% shorter prompt cut 5 s but dropped accuracy from 18/20 to 10/20, so the prompt stays. What changed instead: the model is pinned in memory (a reload after idle cost 10–100 s), generation stops at the end of the statement, the SQL streams to the page as it is written, and an identical earlier question reuses its logged, already-checked SQL, which Db2 runs live in ~0.1 s (labelled on the page, with an "Ask Granite fresh" button). The app has Granite answer the sample questions once at startup, so they are instant for visitors.
 
 ---
 
@@ -147,7 +149,7 @@ docker compose logs -f setup  # wait for "rule texts embedded"
 
 The `setup` job builds the schema, loads the shipped sample (3 stations, October 2025: Chandni Chowk, ITO, Anand Vihar), runs the audit and embeds the rule texts. On the sample, 91 of 93 station-days match the full run exactly; the other two (31 Oct) differ by a few AQI points because the sample has no November hours.
 
-**Hosted demo in GitHub Codespaces** (free, no card): on the repo page click **Code → Codespaces → Create codespace on main** (choose the 4-core machine). The stack starts by itself (`deploy/codespace_start.sh`, about 25 minutes the first time) and port 8000 is made public.
+**Hosted demo in GitHub Codespaces** (free, no card): on the repo page click **Code → Codespaces → Create codespace on main** (choose the 4-core machine). The stack starts by itself (`deploy/codespace_start.sh`, about 25 minutes the first time) and port 8000 is made public. The `keep-demo-alive` workflow keeps the Codespace awake during the judging window. Some networks block `*.github.dev`; there the page falls back to the labelled export.
 
 **Hosted demo on a VM** (Ubuntu, 8 GB RAM, ports 80/443 open, a public DNS name):
 ```bash
@@ -192,7 +194,7 @@ cp .env.example .env
 ```bash
 pip install -r requirements.txt
 set -a; . ./.env; set +a; export DB2_HOST=localhost OLLAMA_URL=http://localhost:11434
-pytest tests/                      # 21 tests; the Db2 ones skip if DB2_PASSWORD is unset
+pytest tests/                      # 26 tests; the Db2 ones skip if DB2_PASSWORD is unset
 python eval/fault_injection.py     # rebuilds schema AQE and plants 198 faults
 python eval/ask_eval.py            # 20 gold questions + 8 attack prompts (18/20, 8/8)
 ```
@@ -201,7 +203,7 @@ The tests run against a real Db2, not mocks. They check: CPCB sub-index values; 
 ---
 
 ## Screenshots & Demo
-- **Live Demo Link:** https://debi910.github.io/aqi-truth/ (static export of the full run; the question box needs the Docker setup)
+- **Live Demo Link:** https://debi910.github.io/aqi-truth/ — talks to the live Db2 + Granite server when it is up (green "Live" pill; during judging it is kept up), otherwise falls back to a clearly labelled read-only export of the same run.
 - **Demo Video Link:** _to be added_
 
 | | |
@@ -229,7 +231,8 @@ The tests run against a real Db2, not mocks. They check: CPCB sub-index values; 
 - **15-minute rows:** the OpenAQ copy repeats each hourly value as four 15-minute rows; we bucket by the hour they start in and count an hour as present with one plausible row. Different choices change "missing hour" counts (see the ThePrint comparison).
 - **No official ground truth** of which station-days CPCB itself rejected; the fault-injection test measures detection on planted faults, not on real failures.
 - **Revisions:** the temporal table records revisions on reload, but we have only one snapshot of the archive, so no real revisions are shown yet.
-- **Question box** uses a small local model; it can misread questions (see the eval). Wrong answers are still read-only and limited to the two views.
+- **Question box** uses a small local model on CPU: a new question takes about 20–30 s, and it can misread questions (see the eval). Wrong answers are still read-only and limited to the two views.
+- **Hosting** is a free GitHub Codespace with no uptime guarantee, reached through `*.github.dev`, which some networks block.
 - **Next:** daily ingestion so revisions are captured as they happen, the other Indian cities in the same archive, and a public "refusal feed" newsrooms can embed.
 
 ---
@@ -239,6 +242,7 @@ The tests run against a real Db2, not mocks. They check: CPCB sub-index values; 
 - AQI method: [CPCB National Air Quality Index](https://cpcb.nic.in/National-Air-Quality-Index/).
 - Reporting: ThePrint and Newslaundry articles linked above, quoted in `data/rules.json`.
 - Models: IBM Granite 4.0 micro and Granite embedding (Apache 2.0).
+- Map outline: Delhi boundary by [DataMeet India](https://github.com/datameet/Municipal_Spatial_Data) (CC BY 4.0), in `data/geo/`. Icons drawn after Lucide (ISC).
 
 ---
 

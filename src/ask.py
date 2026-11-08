@@ -23,6 +23,7 @@ Q: On Diwali 2025 (21 October) which stations were suspect?
 SQL: SELECT STATION, AQI, NAIVE_AQI FROM AQ.V_DAY WHERE DAY = '2025-10-21' AND STATUS = 'SUSPECT'
 Q: How many jump checks failed at Okhla in November?
 SQL: SELECT COUNT(*) FROM AQ.V_CHECK WHERE STATION LIKE '%Okhla%' AND CHECK_CODE = 'JUMP' AND PASSED = 0 AND DAY BETWEEN '2025-11-01' AND '2025-11-30'"""
+SYSTEM = "You translate questions into a single read-only Db2 SQL SELECT over the given views."
 
 def reader():
     dsn = (f"DATABASE={os.getenv('DB2_DATABASE','AQIDB')};HOSTNAME={os.getenv('DB2_HOST','localhost')};PORT={os.getenv('DB2_PORT','50000')};"
@@ -54,18 +55,30 @@ def check_sql(sql):
         sql += " FETCH FIRST 50 ROWS ONLY"
     return sql
 
-def ask(question, conn=None):
+def prompt(question):
+    return f"{SCHEMA}\n\n{EXAMPLES}\n\nWrite one Db2 SELECT for the question. Reply with SQL only, no explanation.\nQ: {question}\nSQL:"
+
+def guard(question):
+    """Refuse forecasts, health advice and blame before any model call."""
     if OUT_OF_SCOPE.search(question):
         return dict(refused=True, why="AQI Truth only answers questions about what the monitors recorded and how the audit judged it. "
                                       "It does not predict air quality or give health advice.")
-    raw = generate(f"{SCHEMA}\n\n{EXAMPLES}\n\nWrite one Db2 SELECT for the question. Reply with SQL only, no explanation.\nQ: {question}\nSQL:",
-                   max_tokens=200, system="You translate questions into a single read-only Db2 SQL SELECT over the given views.")
+
+def extract(raw):
     sql = re.sub(r"^```\w*|```$", "", raw.strip(), flags=re.M).strip().split("\n\n")[0]
-    sql = re.sub(r"^SQL:\s*", "", sql)
+    return re.sub(r"^SQL:\s*", "", sql)
+
+def sql_done(text):
+    """Granite has finished its one statement: stop generating instead of paying for trailing tokens."""
+    t = text.strip()
+    return t.endswith(";") or "\n\n" in t.lstrip("`\n") or bool(re.search(r"FETCH\s+FIRST\s+\d+\s+ROWS?\s+ONLY\s*$", t, re.I))
+
+def run(sql, conn=None):
+    """Check the SQL and run it as AQREADER. Returns the answer dict."""
     try:
         sql = check_sql(sql)
     except Refused as e:
-        return dict(refused=True, why=f"The generated query was blocked: {e}.", sql=sql)
+        return dict(refused=True, why=f"The generated query was blocked: {e}.", sql=sql, outcome="BLOCKED")
     conn = conn or reader()
     cur = conn.cursor()
     try:
@@ -73,8 +86,13 @@ def ask(question, conn=None):
         cols = [d[0] for d in cur.description]
         data = [list(r) for r in cur.fetchall()]
     except Exception as e:
-        return dict(refused=True, why=f"Db2 rejected the query: {str(e)[-160:]}", sql=sql)
-    return dict(refused=False, sql=sql, columns=cols, rows=data)
+        return dict(refused=True, why=f"Db2 rejected the query: {str(e)[-160:]}", sql=sql, outcome="DB2_ERROR")
+    return dict(refused=False, sql=sql, columns=cols, rows=data, outcome="ANSWERED")
+
+def ask(question, conn=None):
+    g = guard(question)
+    if g: return g
+    return run(extract(generate(prompt(question), max_tokens=200, system=SYSTEM)), conn)
 
 if __name__ == "__main__":
     print(ask(" ".join(sys.argv[1:])))
