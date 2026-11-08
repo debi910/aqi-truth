@@ -48,6 +48,15 @@ jobs:
           gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- \
             'cd /workspaces/aqi-truth && git pull -q --ff-only || true; if [ -f /tmp/aqi-start.pid ] && kill -0 "$(cat /tmp/aqi-start.pid)" 2>/dev/null; then echo "start script already running"; else CODESPACE_NAME=${{ steps.cs.outputs.name }} setsid nohup bash deploy/codespace_start.sh > /tmp/aqi-start.log 2>&1 < /dev/null & echo "start script launched"; fi; sleep 5; tail -n 3 /tmp/aqi-start.log'
           gh codespace ports visibility 8000:public -c "${{ steps.cs.outputs.name }}" || true
+      - name: Probe the question box (local and through the public port, as the Pages site calls it)
+        if: steps.win.outputs.go == '1'
+        continue-on-error: true
+        run: |
+          Q='{"question":"Which station had the highest audited AQI in October 2025?"}'
+          echo "--- local POST"; gh codespace ssh -c "${{ steps.cs.outputs.name }}" -- "curl -s -m 150 -w ' [%{http_code} %{time_total}s]' -X POST localhost:8000/api/ask -H 'content-type: application/json' -d '$Q' | cut -c1-600"; echo
+          U="https://${{ steps.cs.outputs.name }}-8000.app.github.dev"
+          echo "--- public preflight"; curl -s -m 30 -o /dev/null -D - -X OPTIONS "$U/api/ask" -H "Origin: https://debi910.github.io" -H "Access-Control-Request-Method: POST" -H "Access-Control-Request-Headers: content-type" | grep -iE "^HTTP|access-control|location" || true
+          echo "--- public POST"; curl -s -m 150 -w ' [%{http_code} %{time_total}s]' -X POST "$U/api/ask" -H "Origin: https://debi910.github.io" -H "content-type: application/json" -d "$Q" | cut -c1-600; echo
       - name: Heartbeat for 18 minutes
         if: steps.win.outputs.go == '1'
         run: |
