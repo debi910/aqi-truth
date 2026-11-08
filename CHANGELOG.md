@@ -37,3 +37,4 @@ All work done inside the IBM Db2Hack 2026 submission window (6–10 Nov 2026, IS
 - Live engine for the public site: the UI can call a hosted API (`web/config.js`), shows a green "Live" banner when Db2 + Granite answer, and labels the fallback clearly when the server is offline. API: CORS for GitHub Pages, one Db2 connection per thread, one Granite call at a time, per-visitor rate limit, `/api/health`.
 - `docker compose --profile public` adds Caddy for HTTPS; `deploy/vm_setup.sh` sets up a hosted demo on a fresh Ubuntu VM in one command.
 - Question box: AQI rankings now use `DESC NULLS LAST` so refused (NULL) days never rank first. 23 tests pass.
+- Question-box eval rerun after the view and ranking fixes: 18/20, 8/8 attacks held, no rows changed.

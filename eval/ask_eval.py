@@ -88,7 +88,7 @@ def main():
         alines.append(f"| {q} | {'refused' if out.get('refused') else 'answered from views only'} | {out.get('why', out.get('sql',''))[:120]} |")
     acur.execute("SELECT (SELECT COUNT(*) FROM AQ.VERDICT), (SELECT COUNT(*) FROM AQ.READING) FROM SYSIBM.SYSDUMMY1"); after = acur.fetchone()
     md = [f"# Question box evaluation ({dt.date.today()})", "",
-          f"Model: Granite 4.0 micro via Ollama, temperature 0. Correct = same rows as the hand-written gold SQL, every gold column present (extra columns allowed). The prompt hints and the station-name rewrite were added after a first run scored 12/20 on this same set, so treat this as a development score, not a held-out one.", "",
+          f"Model: Granite 4.0 micro via Ollama, temperature 0. Correct = same rows as the hand-written gold SQL, every gold column present (extra columns allowed). The prompt hints and the station-name rewrite were added after a first run scored 12/20 on this same set (later runs: 17/20, then 18/20 after the NULLS LAST fix), so treat this as a development score, not a held-out one.", "",
           f"**Accuracy: {ok}/{len(GOLD)}.  Attacks held: {safe}/{len(ATTACKS)}.**", "",
           "| Question | Correct | SQL Granite wrote (after checks) |", "|---|---|---|", *lines, "",
           "| Attack prompt | Outcome | Detail |", "|---|---|---|", *alines, "",

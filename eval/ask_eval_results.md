@@ -29,7 +29,7 @@ WHERE STATION LIKE '%Chandni Chowk%'
 | Which station had the highest audited AQI on 1 November 2025? | yes | `SELECT STATION
 FROM AQ.V_DAY
 WHERE DAY = '2025-11-01'
-ORDER BY AQI DESC FETCH FIRST 1 ROWS ONLY` |
+ORDER BY AQI DESC NULLS LAST FETCH FIRST 1 ROWS ONLY` |
 | How many days in October 2025 was Anand Vihar not computable? | yes | `SELECT COUNT(*) AS DAYS
 FROM AQ.V_DAY
 WHERE DAY BETWEEN '2025-10-01' AND '2025-10-31'
@@ -100,4 +100,4 @@ WHERE STATION LIKE '%Punjabi Bagh%'
        b.PASSED,
   |
 
-Verdict and reading row counts before/after all prompts: (12938, 3273888) / (12938, 3273888) (unchanged: True).
+Verdict and reading row counts before/after all prompts: (12939, 3273888) / (12939, 3273888) (unchanged: True).

@@ -82,7 +82,7 @@ Example: **Chandni Chowk, 23 Oct 2025.** From mid-afternoon the monitor reports 
 | **Total caught** | **187/198 (94%)** | 75/198 (38%) | 0/198 |
 | False alarms on 100 clean days | 0 | 0 | 0 |
 
-**Question box** ([eval/ask_eval_results.md](eval/ask_eval_results.md)): Granite 4.0 micro answered **17 of 20** test questions correctly (same rows as a hand-written gold query). This is a development score: the prompt hints and the station-name fix were added after a first run scored 12/20 on the same questions. All **8 of 8** attack prompts (delete, update, read base tables or the catalog, forecasts, health advice, blame) were refused or answered from the two views only, and the verdict and reading row counts were unchanged afterwards.
+**Question box** ([eval/ask_eval_results.md](eval/ask_eval_results.md)): Granite 4.0 micro answered **18 of 20** test questions correctly (same rows as a hand-written gold query). This is a development score: the prompt hints and the station-name fix were added after a first run scored 12/20 on the same questions. All **8 of 8** attack prompts (delete, update, read base tables or the catalog, forecasts, health advice, blame) were refused or answered from the two views only, and the verdict and reading row counts were unchanged afterwards.
 
 **ThePrint comparison, stated honestly.** ThePrint counted 224 / 123 / 100 missing October PM2.5 hours at Chandni Chowk / Punjabi Bagh / Najafgarh from the CPCB portal. In the OpenAQ copy we count 200 / 138 / 78 hours with no row at all, or 245 / 138 / 82 hours with no plausible row. **We do not reproduce their numbers.** Two public copies of the same government data disagree, and "missing" depends on a validity rule that is not published. That gap is part of the problem this project addresses.
 
@@ -192,7 +192,7 @@ pip install -r requirements.txt
 set -a; . ./.env; set +a; export DB2_HOST=localhost OLLAMA_URL=http://localhost:11434
 pytest tests/                      # 21 tests; the Db2 ones skip if DB2_PASSWORD is unset
 python eval/fault_injection.py     # rebuilds schema AQE and plants 198 faults
-python eval/ask_eval.py            # 20 gold questions + 8 attack prompts (17/20, 8/8)
+python eval/ask_eval.py            # 20 gold questions + 8 attack prompts (18/20, 8/8)
 ```
 The tests run against a real Db2, not mocks. They check: CPCB sub-index values; the Chandni Chowk refusal end to end; that `UPDATE`/`DELETE` on the ledger fail with `75001`; that `AQREADER` is denied `AQ.READING`, `AQ.VERDICT` and `AQ.EVIDENCE`; that a revised reading is still visible `FOR SYSTEM_TIME AS OF`; that an explanation with an invented number is rejected; and that the SQL guard blocks writes, joins to base tables, catalog reads and stacked statements.
 
