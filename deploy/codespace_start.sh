@@ -25,6 +25,15 @@ if ! pgrep -x cloudflared >/dev/null; then
   [ -x /tmp/cloudflared ] && setsid nohup /tmp/cloudflared tunnel --no-autoupdate --protocol http2 --url http://localhost:8000 > /tmp/cloudflared.log 2>&1 < /dev/null &
 fi
 ( for i in $(seq 1 60); do u=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1); [ -n "$u" ] && { echo "$u" > /tmp/tunnel.url; break; }; sleep 2; done ) &
+# One-off (approved 9 Nov 2026): the Db2 container failed its own setup after being recreated, so start from a
+# fresh database volume and reload the public data. Downloaded files in data/raw and the Granite models are kept.
+if [ ! -f data/.fresh_v2 ]; then
+  echo "one-off: rebuilding the Db2 database"
+  docker compose rm -sf db2 || true
+  docker volume ls -q | grep -E '_db2data$' | xargs -r docker volume rm || true
+  rm -f data/.full_loaded data/.audit_v2
+  touch data/.fresh_v2
+fi
 echo "starting compose"
 # Db2 first. A recreated container (new settings) keeps the database volume but not the OS users that Db2
 # authenticates against, and its health check waits for them; so create them (idempotent) once Db2 answers.
@@ -45,8 +54,9 @@ if [ -f data/.full_loaded ] && [ ! -f data/.audit_v2 ]; then
 fi
 if [ ! -f data/.full_loaded ]; then
   docker compose run --rm -v "$PWD/data/raw:/app/data/raw" setup sh -c \
-    "python scripts/fetch_openaq.py data/raw 2025 09,10,11,12 && python src/load.py data/raw 2025-09-01 2025-12-31 --append" \
-    && touch data/.full_loaded
+    "python scripts/fetch_openaq.py data/raw 2025 09,10,11,12 && python src/load.py data/raw 2025-09-01 2025-12-31 --append --reaudit" \
+    && touch data/.full_loaded data/.audit_v2
+  mkdir -p docs && docker compose run --rm -v "$PWD/docs:/app/docs" setup python scripts/db2_evidence.py || true
   docker compose restart app
 fi
 [ -n "${CODESPACE_NAME:-}" ] && gh codespace ports visibility 8000:public -c "$CODESPACE_NAME" 2>/dev/null || echo "port visibility is set by the keep-alive job"
