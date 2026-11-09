@@ -25,8 +25,43 @@ CREATE TABLE AQ.EXPLANATION (
 )@
 CREATE TRIGGER AQ.EXPLANATION_NO_UPDATE NO CASCADE BEFORE UPDATE ON AQ.EXPLANATION
  FOR EACH ROW SIGNAL SQLSTATE '75001' SET MESSAGE_TEXT = 'Explanations are append-only'@
+CREATE TRIGGER AQ.EXPLANATION_NO_DELETE NO CASCADE BEFORE DELETE ON AQ.EXPLANATION
+ FOR EACH ROW SIGNAL SQLSTATE '75001' SET MESSAGE_TEXT = 'Explanations are append-only'@
 
--- A separate Db2 authorization ID for the question box: it can read the audited views and nothing else.
+-- Every audit run of a station-day, with the verdict the previous run gave. A reload that brings revised
+-- readings re-audits the affected days, so a changed verdict shows up here with the data time it was based on.
+CREATE OR REPLACE VIEW AQ.V_VERDICT_HISTORY AS
+SELECT V.STATION_ID, V.DAY, V.RUN_ID, V.STATUS, V.AQI, V.DATA_AS_OF,
+       LAG(V.STATUS) OVER (PARTITION BY V.STATION_ID, V.DAY ORDER BY V.RUN_ID) AS PREV_STATUS,
+       LAG(V.AQI) OVER (PARTITION BY V.STATION_ID, V.DAY ORDER BY V.RUN_ID) AS PREV_AQI
+  FROM AQ.VERDICT V@
+
+-- Readings the publisher changed or withdrew after we first loaded them (from the system-period history).
+CREATE OR REPLACE VIEW AQ.V_REVISION AS
+SELECT H.STATION_ID, H.PARAM, H.TS, H.VALUE AS OLD_VALUE, R.VALUE AS NEW_VALUE,
+       H.SYS_START AS FIRST_SEEN, H.SYS_END AS REVISED_AT,
+       CASE WHEN R.STATION_ID IS NULL THEN 'WITHDRAWN' ELSE 'CHANGED' END AS KIND
+  FROM AQ.READING_HIST H
+  LEFT JOIN AQ.READING R ON R.STATION_ID = H.STATION_ID AND R.PARAM = H.PARAM AND R.TS = H.TS@
+
+-- The web app's ID: reads the audit, appends explanations (and question-log rows, 06_asklog.sql). It has no
+-- DELETE, UPDATE, ALTER or CONTROL privilege, so it cannot TRUNCATE the ledgers, which triggers would not stop.
+GRANT CONNECT ON DATABASE TO USER AQAPP@
+GRANT SELECT ON AQ.STATION TO USER AQAPP@
+GRANT SELECT ON AQ.READING TO USER AQAPP@
+GRANT SELECT ON AQ.HOURLY TO USER AQAPP@
+GRANT SELECT ON AQ.VERDICT TO USER AQAPP@
+GRANT SELECT ON AQ.EVIDENCE TO USER AQAPP@
+GRANT SELECT ON AQ.RULE_TEXT TO USER AQAPP@
+GRANT SELECT ON AQ.V_DAY TO USER AQAPP@
+GRANT SELECT ON AQ.V_CHECK TO USER AQAPP@
+GRANT SELECT ON AQ.V_VERDICT_HISTORY TO USER AQAPP@
+GRANT SELECT ON AQ.V_REVISION TO USER AQAPP@
+GRANT SELECT, INSERT ON AQ.EXPLANATION TO USER AQAPP@
+
+-- A separate Db2 authorization ID for the question box: SELECT on the two audited views and no table.
+-- (Like any connected user it can still read the SYSCAT catalog views through PUBLIC; the SQL checker only
+-- lets the question box name AQ.V_DAY and AQ.V_CHECK.)
 GRANT CONNECT ON DATABASE TO USER AQREADER@
 GRANT SELECT ON AQ.V_DAY TO USER AQREADER@
 GRANT SELECT ON AQ.V_CHECK TO USER AQREADER@

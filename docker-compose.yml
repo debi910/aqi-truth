@@ -11,6 +11,7 @@ services:
       DB2INST1_PASSWORD: ${DB2_PASSWORD}
       DBNAME: ${DB2_DATABASE:-AQIDB}
       DB2_READER_PASSWORD: ${DB2_READER_PASSWORD}
+      DB2_APP_PASSWORD: ${DB2_APP_PASSWORD:-}
     volumes:
       - db2data:/database
       - ./docker/db2-custom:/var/custom

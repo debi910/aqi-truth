@@ -52,3 +52,12 @@ def test_question_normalisation_for_reuse():
     import app
     assert app.norm("  Which station   was worst? ") == app.norm("which station was worst")
     assert app.norm("Which station was worst?") != app.norm("Which station was best?")
+
+def test_checker_refuses_cross_joins_and_clamps_row_cap():
+    from ask import check_sql, Refused
+    with pytest.raises(Refused):
+        check_sql("SELECT * FROM AQ.V_DAY, AQ.V_CHECK")
+    with pytest.raises(Refused):
+        check_sql("SELECT * FROM AQ.V_DAY CROSS JOIN AQ.V_CHECK")
+    assert check_sql("SELECT STATION FROM AQ.V_DAY FETCH FIRST 5000 ROWS ONLY").endswith("FETCH FIRST 50 ROWS ONLY")
+    assert check_sql("SELECT STATION FROM AQ.V_DAY").endswith("FETCH FIRST 50 ROWS ONLY")

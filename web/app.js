@@ -136,7 +136,51 @@ document.addEventListener("keydown", e => {
 function tab(name) {
   $$(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === name));
   $$(".panel").forEach(p => p.hidden = p.dataset.panel !== name);
+  if (name === "receipt") receipt();
 }
+
+/* ---------- verifiable receipt ---------- */
+const short = h => h ? `${h.slice(0, 12)}…${h.slice(-6)}` : "—";
+const utc = t => String(t).replace("T", " ").slice(0, 19) + " UTC";
+function receiptChecks(r) {
+  const row = (ok, title, text) => `<li class="${ok ? "ok" : "no"}">${icon(ok ? "check" : "x")}<div><b>${title}</b><span>${text}</span></div></li>`;
+  return `<ul class="rchecks">
+    ${row(r.chain_ok, "Hash chain", `this receipt's SHA-256 recomputes from its fields and links to the receipt before it`)}
+    ${row(r.history_ok, "History", `the readings Db2 returns <code>FOR SYSTEM_TIME AS OF</code> ${utc(r.issued_at)} hash to the receipt`)}
+    ${row(r.data_same, "Current data", r.data_same ? `the ${fmt.format(r.n_now)} readings stored now are the ones judged` : `${r.changed} reading(s) differ from what was judged: ${esc(r.example || "")}`)}
+    ${row(r.rules_same, "Rules", "CPCB breakpoints, plausibility limits and settings are unchanged")}</ul>`;
+}
+async function receipt() {
+  const p = $("#p-receipt"), {s, d} = CUR;
+  if (!LIVE) { p.innerHTML = `<p class="fine">${icon("lock")} Every verdict gets a SHA-256 receipt in Db2, and Db2 re-checks it on request. That needs the live server, which this network can't reach right now.</p>`; return; }
+  p.innerHTML = `<div class="lines"><div class="sk"></div><div class="sk" style="width:70%"></div></div>`;
+  let r; try { r = await get(`/api/receipt?station=${s}&day=${d}`); } catch (e) { p.innerHTML = `<p class="fine">No receipt: ${esc(e.message)}</p>`; return; }
+  if (CUR.s !== s || CUR.d !== d) return;
+  p.innerHTML = `<p class="fine">${icon("lock")} A Db2 trigger issued this receipt when the verdict was written. <code>AQ.VERIFY_RECEIPT</code> just re-checked it, live.</p>
+    <div class="rhead"><span class="stamp sm ${r.result === "MATCH" ? "VALID" : ""}">${r.result.replace("_", " ")}</span>
+      <span class="fine">receipt #${r.receipt_id} · issued ${utc(r.issued_at)} · ${fmt.format(r.n_readings)} readings judged</span></div>
+    ${receiptChecks(r)}
+    <dl class="rhash"><dt>receipt</dt><dd>${short(r.receipt_hash)}</dd><dt>previous</dt><dd>${short(r.prev_hash)}</dd><dt>inputs</dt><dd>${short(r.input_hash)}</dd></dl>
+    <div class="tamper"><button class="btn" id="tamperbtn">${icon("shield")}Try to tamper with this day</button>
+      <span class="fine">Db2 overwrites one reading inside a savepoint, re-checks the receipt, then rolls the change back. Nothing is kept.</span></div>
+    <div id="tamperout"></div>`;
+  $("#tamperbtn").onclick = async () => {
+    const b = $("#tamperbtn"), out = $("#tamperout"); b.disabled = true;
+    out.innerHTML = `<div class="thinking">${icon("db")} Db2 is changing a reading and re-checking the receipt…</div>`;
+    try {
+      const r2 = await fetch(`${API}/api/receipt/tamper?station=${s}&day=${d}`, {method: "POST"});
+      if (!r2.ok) throw new Error((await r2.json().catch(() => ({}))).detail || r2.status);
+      const t = await r2.json();
+      out.innerHTML = `<ol class="tsteps">
+        <li><b>1 · Overwrite</b><span>${esc(t.touched)}</span></li>
+        <li><b>2 · Verify</b><span><span class="stamp sm">${esc(t.during.replace("_", " "))}</span> ${esc(t.during_detail || "")}</span></li>
+        <li><b>3 · Roll back, verify</b><span><span class="stamp sm ${t.after === "MATCH" ? "VALID" : ""}">${esc(t.after)}</span> the change is gone and the receipt holds again.</span></li></ol>
+        <p class="fine">All three steps ran inside one Db2 call (<code>AQ.TAMPER_TEST</code>, ${t.ms} ms).</p>`;
+    } catch (e) { out.innerHTML = `<p class="fine">Could not run the tamper test: ${esc(e.message)}</p>`; }
+    b.disabled = false;
+  };
+}
+
 
 let loadSeq = 0;
 async function load() {
@@ -160,6 +204,7 @@ async function load() {
            : `<div class="v-big num">${v.aqi}</div><div class="v-cat">${cat(v.aqi)} · driven by ${LABEL[v.prominent] || v.prominent} · <span class="stamp sm ${v.status}">${v.status}</span></div>`}
       <p class="v-reason">${esc(v.reason)}.</p></div>`;
   hours(v); evidence(v);
+  if (!$("#p-receipt").hidden) receipt();
   if (v.explanation) why(v.explanation);
   else if (LIVE) {
     $("#p-why").innerHTML = `<div class="thinking">${icon("cpu")} Granite is writing two sentences from the evidence. Code checks every number before it is shown.</div><div class="lines"><div class="sk"></div><div class="sk" style="width:80%"></div></div>`;

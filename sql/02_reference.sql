@@ -11,14 +11,16 @@ INSERT INTO AQ.BREAKPOINT (PARAM, BP_LO, BP_HI, I_LO, I_HI, AVG_HOURS) VALUES
  ('co',0,1.0,0,50,8),('co',1.1,2.0,51,100,8),('co',2.1,10,101,200,8),('co',10.1,17,201,300,8),('co',17.1,34,301,400,8),('co',34.1,51,401,500,8)@
 
 -- Plausibility limits for the fault detectors (our engineering choices, documented in README).
+-- PM caps sit above the highest Diwali-night readings reported as real (PM2.5 up to ~2,200 ug/m3 on
+-- 21 Oct 2025), so a real extreme is not thrown away; values above them (e.g. 4.5e15) are instrument faults.
 INSERT INTO AQ.PLAUSIBLE (PARAM, MIN_V, MAX_V, MAX_JUMP, FLAT_HOURS) VALUES
- ('pm25',0.01,1500,600,4),('pm10',0.01,2500,1000,4),('no2',0.01,1000,300,6),
+ ('pm25',0.01,3000,600,4),('pm10',0.01,5000,1000,4),('no2',0.01,1000,300,6),
  ('so2',0.01,1600,300,8),('o3',0.01,1000,300,6),('co',0.001,50,20,6)@
 
 -- Audit settings.
 CREATE TABLE AQ.SETTING (NAME VARCHAR(30) NOT NULL PRIMARY KEY, NUM_VALUE DOUBLE NOT NULL, NOTE VARCHAR(300) NOT NULL)@
 INSERT INTO AQ.SETTING VALUES
- ('MIN_QUARTERS_PER_HOUR',1,'An hour is valid with at least 1 plausible reading: the 15-minute rows in the OpenAQ copy repeat one hourly value.'),
+ ('MIN_HOUR_CAPTURE',0.75,'An hour is valid when at least 75% of the readings expected that hour are plausible: 3 of 4 at 15-minute cadence; 1 of 1 when the station published hourly that day (one row an hour, or 15-minute rows repeating one hourly value).'),
  ('MIN_HOURS_24H',16,'CPCB: a 24-hour average needs at least 16 valid hours (the rule the CAG audit cited).'),
  ('MIN_HOURS_8H',6,'An 8-hour average (O3, CO) needs at least 6 valid hours (75%).'),
  ('MIN_PARAMS',3,'CPCB: AQI needs sub-indices for at least 3 pollutants, one of them PM2.5 or PM10.')@

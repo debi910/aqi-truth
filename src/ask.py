@@ -25,10 +25,13 @@ Q: How many jump checks failed at Okhla in November?
 SQL: SELECT COUNT(*) FROM AQ.V_CHECK WHERE STATION LIKE '%Okhla%' AND CHECK_CODE = 'JUMP' AND PASSED = 0 AND DAY BETWEEN '2025-11-01' AND '2025-11-30'"""
 SYSTEM = "You translate questions into a single read-only Db2 SQL SELECT over the given views."
 
+TIMEOUT_S = int(os.getenv("ASK_TIMEOUT_S", "10"))   # Db2 cancels a question-box query that runs longer than this
+MAX_ROWS = 50
+
 def reader():
-    dsn = (f"DATABASE={os.getenv('DB2_DATABASE','AQIDB')};HOSTNAME={os.getenv('DB2_HOST','localhost')};PORT={os.getenv('DB2_PORT','50000')};"
-           f"PROTOCOL=TCPIP;UID={os.getenv('DB2_READER_USER','aqreader')};PWD={os.environ['DB2_READER_PASSWORD']};")
-    return ibm_db_dbi.Connection(ibm_db.connect(dsn, "", ""))
+    """A raw ibm_db connection as AQREADER (SELECT on AQ.V_DAY and AQ.V_CHECK only)."""
+    from db import dsn
+    return ibm_db.connect(dsn(os.getenv('DB2_READER_USER', 'aqreader'), os.environ['DB2_READER_PASSWORD']), "", "")
 
 class Refused(Exception):
     pass
@@ -51,8 +54,15 @@ def check_sql(sql):
     tables = {t.name.upper() for t in trees[0].find_all(exp.Table)}
     if not tables or not tables <= ALLOWED or any((t.db or "").upper() not in ("AQ", "") for t in trees[0].find_all(exp.Table)):
         raise Refused(f"query touches tables outside the audited views: {sorted(tables - ALLOWED) or sorted(tables)}")
+    for j in trees[0].find_all(exp.Join):
+        if not (j.args.get("on") or j.args.get("using")):
+            raise Refused("a join without a join condition (cross join) is not allowed")
+    if len(list(trees[0].find_all(exp.Table))) > 3:
+        raise Refused("at most three view references are allowed")
+    # Row cap: add one, or clamp a larger one, to MAX_ROWS.
+    sql = re.sub(r"FETCH\s+FIRST\s+(\d+)\s+ROWS?\s+ONLY", lambda m: f"FETCH FIRST {min(int(m.group(1)), MAX_ROWS)} ROWS ONLY", sql, flags=re.I)
     if not re.search(r"FETCH\s+FIRST", sql, re.I):
-        sql += " FETCH FIRST 50 ROWS ONLY"
+        sql += f" FETCH FIRST {MAX_ROWS} ROWS ONLY"
     return sql
 
 def prompt(question):
@@ -79,14 +89,23 @@ def run(sql, conn=None):
         sql = check_sql(sql)
     except Refused as e:
         return dict(refused=True, why=f"The generated query was blocked: {e}.", sql=sql, outcome="BLOCKED")
-    conn = conn or reader()
-    cur = conn.cursor()
+    own = conn is None
+    h = reader() if own else getattr(conn, "conn_handler", conn)
     try:
-        cur.execute(sql)
-        cols = [d[0] for d in cur.description]
-        data = [list(r) for r in cur.fetchall()]
+        # SQL_ATTR_QUERY_TIMEOUT: the Db2 client cancels the statement after TIMEOUT_S seconds (SQL0952N).
+        st = ibm_db.prepare(h, sql, {ibm_db.SQL_ATTR_QUERY_TIMEOUT: TIMEOUT_S})
+        ibm_db.execute(st)
+        cols = [ibm_db.field_name(st, i) for i in range(ibm_db.num_fields(st))]
+        data, r = [], ibm_db.fetch_tuple(st)
+        while r:
+            data.append(list(r)); r = ibm_db.fetch_tuple(st)
     except Exception as e:
-        return dict(refused=True, why=f"Db2 rejected the query: {str(e)[-160:]}", sql=sql, outcome="DB2_ERROR")
+        msg = str(e) + " " + (ibm_db.stmt_errormsg() or "")
+        why = (f"Db2 cancelled the query after {TIMEOUT_S} s." if "SQL0952N" in msg or "timeout" in msg.lower()
+               else f"Db2 rejected the query: {msg.strip()[-160:]}")
+        return dict(refused=True, why=why, sql=sql, outcome="DB2_ERROR")
+    finally:
+        if own: ibm_db.close(h)
     return dict(refused=False, sql=sql, columns=cols, rows=data, outcome="ANSWERED")
 
 def ask(question, conn=None):

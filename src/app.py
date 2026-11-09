@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(__file__))
-from db import connect, rows, run_script
+from db import connect_app, rows
 import explain as ex, ask as asker, llm
 
 WEB = os.path.join(os.path.dirname(__file__), "..", "web")
@@ -17,7 +17,7 @@ app.add_middleware(CORSMiddleware, allow_origins=os.getenv("ALLOWED_ORIGINS", "h
 _local = threading.local()
 def conn():
     # one Db2 connection per worker thread (FastAPI runs sync handlers in a thread pool)
-    if getattr(_local, "c", None) is None: _local.c = connect()
+    if getattr(_local, "c", None) is None: _local.c = connect_app()
     return _local.c
 
 # Granite runs on CPU: one generation at a time, and a small per-visitor budget so a public demo stays usable.
@@ -52,7 +52,7 @@ def stats():
         SUM(CASE WHEN STATUS='NOT_COMPUTABLE' AND NAIVE_AQI IS NOT NULL THEN 1 ELSE 0 END),
         SUM(CASE WHEN STATUS='NOT_COMPUTABLE' AND NAIVE_AQI > 300 THEN 1 ELSE 0 END),
         SUM(CASE WHEN STATUS='SUSPECT' THEN 1 ELSE 0 END),
-        (SELECT COUNT(*) FROM AQ.READING WHERE STATION_ID <> 8118) FROM AQ.V_DAY""")[0]
+        (SELECT COUNT(*) FROM AQ.READING WHERE STATION_ID <> 8118 AND PARAM IN ('pm25','pm10','no2','so2','o3','co')) FROM AQ.V_DAY""")[0]
     return dict(station_days=r[0], not_computable=r[1], shown_anyway=r[2], shown_anyway_very_poor=r[3], suspect=r[4], readings=r[5])
 
 def day_payload(station: int, day: str, with_llm: bool):
@@ -175,6 +175,32 @@ def ask_q(q: Q, request: Request):
     for ev in ask_events(q.question, q.fresh): out = ev
     out.pop("e", None); return out
 
+RECEIPT_COLS = ("result", "receipt_id", "run_id", "status", "aqi", "issued_at", "receipt_hash", "prev_hash", "input_hash",
+                "n_readings", "n_now", "chain_ok", "history_ok", "data_same", "rules_same", "changed", "example")
+
+def verify(station, d):
+    r = rows(conn(), "SELECT * FROM TABLE(AQ.VERIFY_RECEIPT(?, ?)) X", (station, d))
+    if not r: raise HTTPException(404, "no receipt for that station and day")
+    return {k: plain(v) for k, v in zip(RECEIPT_COLS, r[0])}
+
+@app.get("/api/receipt")
+def receipt(station: int, day: str):
+    """Db2 re-checks the day's receipt: hash chain, inputs replayed AS OF the issue time, current inputs, rules."""
+    return verify(station, dt.date.fromisoformat(day))
+
+TAMPER_LOCK = threading.Lock()
+@app.post("/api/receipt/tamper")
+def tamper(station: int, day: str, request: Request):
+    """AQ.TAMPER_TEST: inside a savepoint, overwrite one input reading, verify, roll back, verify again."""
+    throttle(request)
+    d = dt.date.fromisoformat(day)
+    with TAMPER_LOCK:
+        t = time.time()
+        out = conn().cursor().callproc("AQ.TAMPER_TEST", (station, d, "", "", "", ""))
+        ms = int((time.time() - t) * 1000)
+    touched, during, detail, after = out[2:]
+    return dict(touched=touched, during=during, during_detail=detail, after=after, ms=ms, receipt=verify(station, d))
+
 @app.get("/api/explain")
 def explain_day(station: int, day: str):
     """Granite's two sentences for one station-day (stored once, then read from AQ.EXPLANATION)."""
@@ -188,12 +214,8 @@ def asklog():
     return [dict(at=plain(r[0]), question=r[1], outcome=r[2], source=r[3], ms_model=r[4], ms_db2=r[5], rows=r[6]) for r in rs]
 
 def prepare():
-    """At startup: make sure the question log exists, load Granite into memory, and have Granite answer the sample
-    questions once (logged like any visitor's), so their SQL can be reused instantly."""
-    try:
-        run_script(connect(), os.path.join(os.path.dirname(__file__), "..", "sql", "06_asklog.sql"))
-    except Exception as e:
-        if "SQL0601N" not in str(e): print("ask log setup:", str(e)[:160])
+    """At startup: load Granite into memory and have Granite answer the sample questions once (logged like any
+    visitor's), so their SQL can be reused instantly. Schema changes are the loader's job (src/load.py)."""
     for _ in range(120):
         try: llm.warm(); break
         except Exception: time.sleep(5)

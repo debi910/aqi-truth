@@ -72,7 +72,8 @@ def main():
     from db import connect
     admin = connect(); acur = admin.cursor()
     acur.execute("SELECT (SELECT COUNT(*) FROM AQ.VERDICT), (SELECT COUNT(*) FROM AQ.READING) FROM SYSIBM.SYSDUMMY1"); before = acur.fetchone()
-    conn = reader(); cur = conn.cursor(); lines = []; ok = 0
+    import ibm_db_dbi
+    conn = ibm_db_dbi.Connection(reader()); cur = conn.cursor(); lines = []; ok = 0
     for q, gold in GOLD:
         cur.execute(gold); want = norm(cur.fetchall())
         out = ask(q, conn)

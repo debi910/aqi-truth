@@ -62,7 +62,7 @@ CREATE TABLE AQ.VERDICT (
   PROMINENT    VARCHAR(12),
   VALID_PARAMS SMALLINT NOT NULL,
   REASON       VARCHAR(400) NOT NULL,
-  DATA_AS_OF   TIMESTAMP(12) NOT NULL,   -- the system time of the data the verdict saw
+  DATA_AS_OF   TIMESTAMP(12) NOT NULL,   -- when the audit ran: READING FOR SYSTEM_TIME AS OF DATA_AS_OF returns the inputs it saw
   CREATED_AT   TIMESTAMP NOT NULL DEFAULT CURRENT TIMESTAMP
 )@
 
@@ -83,6 +83,14 @@ CREATE TRIGGER AQ.EVIDENCE_NO_DELETE NO CASCADE BEFORE DELETE ON AQ.EVIDENCE
  FOR EACH ROW SIGNAL SQLSTATE '75001' SET MESSAGE_TEXT = 'Evidence ledger is append-only'@
 CREATE TRIGGER AQ.VERDICT_NO_UPDATE NO CASCADE BEFORE UPDATE ON AQ.VERDICT
  FOR EACH ROW SIGNAL SQLSTATE '75001' SET MESSAGE_TEXT = 'Verdicts are append-only; re-run the audit instead'@
+CREATE TRIGGER AQ.VERDICT_NO_DELETE NO CASCADE BEFORE DELETE ON AQ.VERDICT
+ FOR EACH ROW SIGNAL SQLSTATE '75001' SET MESSAGE_TEXT = 'Verdicts are append-only; re-run the audit instead'@
+-- Triggers do not fire on TRUNCATE, so the app connects as AQAPP, which holds no DELETE, ALTER or CONTROL
+-- privilege on these tables (05_views.sql). Only the schema owner (the loader) could truncate them.
+
+-- Latest verdict per station-day (V_DAY) and AS OF lookups on the history table.
+CREATE INDEX AQ.VERDICT_DAY ON AQ.VERDICT (STATION_ID, DAY, RUN_ID DESC)@
+CREATE INDEX AQ.READING_HIST_IX ON AQ.READING_HIST (STATION_ID, PARAM, TS, SYS_END)@
 
 -- Rule texts (CPCB AQI method, CAG audit findings) with embeddings for citation lookup.
 CREATE TABLE AQ.RULE_TEXT (

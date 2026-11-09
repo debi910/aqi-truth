@@ -33,12 +33,28 @@
       "Triggers (append-only ledger)",
       "CHECK constraints",
       "VECTOR data type and VECTOR_DISTANCE",
-      "Least-privilege authorization (read-only user on views)"
+      "Least-privilege authorization: read-only question-box ID on two views; SELECT+INSERT-only app ID",
+      "Row and column access control (row permission, role)",
+      "Query timeout (SQL_ATTR_QUERY_TIMEOUT)",
+      "RUNSTATS via SYSPROC.ADMIN_CMD",
+      "EXPLAIN (partition elimination evidence)"
     ]
   },
   "tech_stack": {
-    "languages": ["Python", "SQL PL", "JavaScript"],
-    "frameworks": ["FastAPI", "Ollama", "Docker Compose", "pytest"],
-    "ai_models": ["IBM Granite 4.0 micro", "IBM Granite embedding multilingual 278M"]
+    "languages": [
+      "Python",
+      "SQL PL",
+      "JavaScript"
+    ],
+    "frameworks": [
+      "FastAPI",
+      "Ollama",
+      "Docker Compose",
+      "pytest"
+    ],
+    "ai_models": [
+      "IBM Granite 4.0 micro",
+      "IBM Granite embedding multilingual 278M"
+    ]
   }
 }

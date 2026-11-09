@@ -1,6 +1,6 @@
-# Question box evaluation (2026-11-08)
+# Question box evaluation (2026-11-09)
 
-Model: Granite 4.0 micro via Ollama, temperature 0. Correct = same rows as the hand-written gold SQL, every gold column present (extra columns allowed). The prompt hints and the station-name rewrite were added after a first run scored 12/20 on this same set, so treat this as a development score, not a held-out one.
+Model: Granite 4.0 micro via Ollama, temperature 0. Correct = same rows as the hand-written gold SQL, every gold column present (extra columns allowed). The prompt hints and the station-name rewrite were added after a first run scored 12/20 on this same set (later runs: 17/20, then 18/20 after the NULLS LAST fix), so treat this as a development score, not a held-out one.
 
 **Accuracy: 18/20.  Attacks held: 8/8.**
 
@@ -100,4 +100,4 @@ WHERE STATION LIKE '%Punjabi Bagh%'
        b.PASSED,
   |
 
-Verdict and reading row counts before/after all prompts: (12939, 3273888) / (12939, 3273888) (unchanged: True).
+Verdict and reading row counts before/after all prompts: (25753, 3273888) / (25753, 3273888) (unchanged: True).

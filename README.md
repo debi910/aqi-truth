@@ -8,6 +8,15 @@
 
 ![Verdict card: a plain average shows 175, Db2 says no AQI is computable](docs/screenshots/verdict.png)
 
+### For judges: where to look
+| Criterion | Where to look |
+|---|---|
+| **Db2 integration & depth (30)** | [`docs/DB2_VERIFICATION.md`](docs/DB2_VERIFICATION.md): one command (`python scripts/db2_evidence.py`) runs every Db2 claim against the live database and records what Db2 answered (temporal `AS OF`, trigger `75001`, `42501` for both restricted IDs, row permission, query timeout, partition elimination). SQL: [`sql/`](sql) (SQL PL procedures, window functions, temporal + partitioned `READING`, `MERGE`, `VECTOR`, RCAC). |
+| **Innovation & impact (25)** | [Results on real data](#results-on-real-data): Db2 refuses an AQI on station-days where a plain average still prints one. Every verdict carries a hash-chained receipt that Db2 can replay from its own history; on the [live demo](https://debi910.github.io/aqi-truth/), open a day's Receipt tab and press "Try to tamper". |
+| **Architecture & AI (20)** | [architecture.md](architecture.md); [AI / LLM Architecture](#ai--llm-architecture): Granite explains and writes SQL, code checks both, Db2 decides. |
+| **Reproducibility & code (15)** | `docker compose up` ([Setup](#setup--installation)); [tests](tests) against a real Db2; [eval/](eval) with results files. |
+| **Docs & presentation (10)** | This README, [CHANGELOG.md](CHANGELOG.md), the [live site](https://debi910.github.io/aqi-truth/). |
+
 ---
 
 ## Table of Contents
@@ -32,7 +41,7 @@
 
 ## Problem Statement
 - India's AQI is computed from Continuous Ambient Air Quality Monitoring Stations (CAAQMS). The CPCB method says a 24-hour average needs **at least 16 hours of data** and an AQI needs **at least 3 pollutants, one of them PM2.5 or PM10** ([CPCB](https://cpcb.nic.in/National-Air-Quality-Index/)).
-- The Comptroller and Auditor General found that Delhi's AQI was not a reliable measure, partly because stations did not meet data-availability norms ([ThePrint on the CAG report, Apr 2025](https://theprint.in/india/delhis-air-was-toxic-for-56-of-the-days-in-last-5-years-aqi-no-reliable-measure-cag-report/2573600); [Newslaundry, Apr 2025](https://www.newslaundry.com/2025/04/01/delhi-air-quality-data-unreliable-cag-report-confirms-newslaundry-probe)). In November 2025 ThePrint reported **hundreds of hours of missing October PM2.5 data** at Delhi monitors around Diwali ([ThePrint, 8 Nov 2025](https://theprint.in/environment/delhis-aqi-monitors-didnt-go-blank-just-on-diwali-hundreds-of-hours-of-october-pm2-5-data-missing/2779540)).
+- The Comptroller and Auditor General found that Delhi's AQI was not a reliable measure, partly because stations did not meet data-availability norms ([ThePrint on the CAG report, Apr 2025](https://theprint.in/india/delhis-air-was-toxic-for-56-of-the-days-in-last-5-years-aqi-no-reliable-measure-cag-report/2573600); [Newslaundry, Apr 2025](https://www.newslaundry.com/2025/04/01/delhi-air-quality-data-unreliable-cag-report-confirms-newslaundry-probe)). In November 2025 ThePrint reported **hundreds of hours of missing PM2.5 data** at Delhi monitors across October, the month of Diwali ([ThePrint, 8 Nov 2025](https://theprint.in/environment/delhis-aqi-monitors-didnt-go-blank-just-on-diwali-hundreds-of-hours-of-october-pm2-5-data-missing/2779540)).
 - Apps, news tickers and many open-source dashboards average whatever values arrived. A day with 9 hours of data, or with a sensor stuck on one value, still gets a confident number and a colour.
 - **Who it is for:** journalists and researchers checking an AQI claim, city officials who need to know which station-days to trust, and developers who republish CPCB data.
 - **Why existing tools fall short:** they show the data; none of the ones we found records *whether the official rule allowed a number at all*, and why.
@@ -45,7 +54,7 @@ For every station and day, Db2 runs the CPCB method and returns one of three ver
 | Verdict | Meaning |
 |---|---|
 | `VALID` | Enough valid hours, nothing excluded. Same as the official method. |
-| `SUSPECT` | Computable only after excluding impossible, stuck or jumping readings. |
+| `SUSPECT` | Computable, but some readings of a pollutant in the AQI were impossible or stuck (excluded) or jumped impossibly from the hour before (flagged). |
 | `NOT_COMPUTABLE` | The rules do not allow an AQI. Db2 stores the reason instead of a number. |
 
 Next to each verdict it stores the **naive AQI** a plain-average dashboard would show, and an **evidence ledger** row for every pollutant and check (coverage, plausibility, stuck sensor, jump, sub-index, minimum pollutants), each with the observed value and the rule it cites. Ledger rows cannot be updated or deleted.
@@ -58,29 +67,33 @@ On top of that:
 ---
 
 ## Results on real data
-34 Delhi CAAQMS stations, 1 Sep to 31 Dec 2025, 1,872,155 fifteen-minute readings of the six AQI pollutants (weather channels are dropped at load), 4,148 station-days. MERGE load 28 s; full audit 2 min 40 s on a 4-core cloud container.
+34 Delhi CAAQMS stations, 1 Sep to 31 Dec 2025, 1,872,155 readings of the six AQI pollutants (mostly at 15-minute cadence) (weather channels are dropped at load), 4,148 station-days. MERGE load 28 s; full audit 2 min 40 s on a 4-core cloud container.
 
 | Finding | Count |
 |---|---|
-| Station-days where CPCB rules allow **no AQI** | 247 |
-| …of which a plain average **still shows a number** | **190** |
-| …of those, shown as Very Poor or Severe | 67 |
-| Station-days computable only after excluding bad readings (`SUSPECT`) | 893 |
+| Station-days where CPCB rules allow **no AQI** | 395 |
+| …of which a plain average **still shows a number** | **338** |
+| …of those, shown as Very Poor or Severe | 147 |
+| Station-days computable, but with impossible or stuck readings excluded or impossible jumps flagged (`SUSPECT`) | 708 |
+
+**How much the headline depends on one choice.** CPCB publishes the 16-hour and 3-pollutant rules but not when an hour counts as valid. We count an hour when at least 75% of its expected readings are plausible (3 of 4 at 15-minute cadence; copies of one hourly value count as one reading). With the looser rule we used until 9 Nov 2026 (one plausible reading makes the hour valid), the count of no-AQI station-days is **247** instead of 395. Most of the difference is four city-wide feed gaps (20 Oct, 3, 10 and 18 Nov 2025), when many stations sent only one or two readings an hour. Both numbers come from the same Db2 procedures; every verdict ever computed is kept in `AQ.V_VERDICT_HISTORY`.
 
 Example: **Chandni Chowk, 23 Oct 2025.** From mid-afternoon the monitor reports only zeros. A plain average gives **175 (Moderate)**. Db2: only 2 pollutants had 16 valid hours and neither was a PM, so **no AQI is computable**.
 
-**Fault-injection test** ([eval/fault_injection_results.md](eval/fault_injection_results.md)). We planted 198 known faults into real, clean pollutant-days (drawn from 9,781 available) and ran the same Db2 procedures on a separate schema:
+**Fault-injection test** ([eval/fault_injection_results.md](eval/fault_injection_results.md)). We planted 198 known faults into real, clean pollutant-days (drawn from 3,081 available) and ran the same Db2 procedures on a separate schema:
 
 | Planted fault | AQI Truth (Db2) | Min/max threshold rule | Plain average |
 |---|---|---|---|
 | Stuck sensor (6 h) | 33/33 | 0/33 | 0/33 |
-| Spike ×10 (1 h) | 22/33 | 9/33 | 0/33 |
+| Spike ×10 (1 h) | 25/33 | 4/33 | 0/33 |
 | Dropout (10 h) | 33/33 | 0/33 | 0/33 |
 | Sentinel −9999 (3 h) | 33/33 | 33/33 | 0/33 |
 | Zeros (4 h) | 33/33 | 0/33 | 0/33 |
 | Unit scale ×1000 (4 h) | 33/33 | 33/33 | 0/33 |
-| **Total caught** | **187/198 (94%)** | 75/198 (38%) | 0/198 |
+| **Total caught** | **190/198 (96%)** | 70/198 (35%) | 0/198 |
 | False alarms on 100 clean days | 0 | 0 | 0 |
+
+Limits of this test: the same person wrote the detectors and chose the fault types, so it shows each rule does what it claims, not accuracy on unknown real failures. The clean control days were picked with our own checks, so 0 false alarms on them is by construction.
 
 **Question box** ([eval/ask_eval_results.md](eval/ask_eval_results.md)): Granite 4.0 micro answered **18 of 20** test questions correctly (same rows as a hand-written gold query). This is a development score: the prompt hints and the station-name fix were added after a first run scored 12/20 on the same questions. All **8 of 8** attack prompts (delete, update, read base tables or the catalog, forecasts, health advice, blame) were refused or answered from the two views only, and the verdict and reading row counts were unchanged afterwards.
 
@@ -96,16 +109,21 @@ Example: **Chandni Chowk, 23 Oct 2025.** From mid-afternoon the monitor reports 
   - `AQ.STAGE_READING` → `MERGE` (only changed values update, so revisions land in history).
   - `AQ.BREAKPOINT` (CPCB bands), `AQ.PLAUSIBLE` (limits, stuck hours, max jump), `AQ.SETTING` (16 h, 6 h, 3 pollutants).
   - `AQ.HOURLY`: per-hour coverage, plausibility, stuck-run and jump flags.
-  - `AQ.VERDICT`, `AQ.EVIDENCE`, `AQ.EXPLANATION`: append-only, enforced by triggers raising `SQLSTATE 75001`.
+  - `AQ.VERDICT`, `AQ.EVIDENCE`, `AQ.EXPLANATION`: append-only. `UPDATE` and `DELETE` are stopped by triggers raising `SQLSTATE 75001`, even for the owner. Triggers do not fire on `TRUNCATE`, so the web app connects as its own ID, `AQAPP`, which holds only `SELECT` and `INSERT` (no `DELETE`, `UPDATE`, `ALTER` or `CONTROL`): its `TRUNCATE` fails with `42501`. Only the schema owner, used by the loader, could truncate.
+  - **Row access control:** a row permission on `AQ.VERDICT` hides the out-of-scope US Embassy monitor (PM2.5 only) from every ID without the `AQAUDITOR` role, whatever SQL it runs.
+  - `AQ.V_REVISION` (readings the publisher changed after we first loaded them, from `READING_HIST`) and `AQ.V_VERDICT_HISTORY` (every audit run of a day with the verdict before it).
   - `AQ.RULE_TEXT`: CPCB/CAG rule paragraphs with `VECTOR(768, FLOAT32)` embeddings.
-  - Views `AQ.V_DAY`, `AQ.V_CHECK`; Db2 user `AQREADER` has `SELECT` on these two views and nothing else.
+  - Views `AQ.V_DAY`, `AQ.V_CHECK`; Db2 user `AQREADER` has `SELECT` on these two views and no table. (Like any Db2 user it can read the `SYSCAT` catalog views through `PUBLIC`; the SQL checker only lets the question box name the two views.) Its queries run with a 10 s `SQL_ATTR_QUERY_TIMEOUT` and a 50-row cap, and the checker refuses joins without a join condition.
   - `AQ.ASK_LOG`: every question-box request (question, SQL, outcome, Granite and Db2 time), append-only by trigger; also the source of reusable SQL for repeated questions. `AQREADER` cannot read it.
 - **Key Queries & Operations:**
   - `AQ.BUILD_HOURLY`: window functions (`LAG`, running `SUM` to number value runs, `COUNT() OVER` for run length) find stuck sensors and impossible jumps.
   - `AQ.COMPUTE_AQI_AUDITED`: SQL PL procedure with a declared global temporary table; 24 h averages with the 16-hour rule, highest 8 h window for O3/CO, `AQ.SUB_INDEX` function, three-pollutant rule; writes the verdict with `FINAL TABLE (INSERT …)` and one evidence row per check.
   - `AQ.AUDIT_RANGE`: audits every station-day in a range.
   - `VECTOR_DISTANCE(…, COSINE)` retrieves rule text inside Db2.
-  - `FOR SYSTEM_TIME AS OF` shows what a reading was before a revision (covered by a test).
+  - `FOR SYSTEM_TIME AS OF` shows what a reading was before a revision; each verdict stores `DATA_AS_OF`, the time it ran, so `READING FOR SYSTEM_TIME AS OF DATA_AS_OF` returns exactly the inputs it judged.
+  - Reloads (`src/load.py --append`) keep the schema: `MERGE` turns a revised value into a new version (old one in `READING_HIST`), and only the station-days whose readings changed are re-audited, as new verdict rows. A full rebuild drops the schema and its history.
+  - **Verifiable AQI receipts** (`sql/08_receipt.sql`): an `AFTER INSERT` trigger on `AQ.VERDICT` issues a receipt in the same transaction with SHA-256 hashes (`HASH(…, 2)`) of the exact readings judged and of the rules in force, chained to the previous receipt. `SELECT * FROM TABLE(AQ.VERIFY_RECEIPT(11603, '2025-10-23'))` recomputes the chain, replays the inputs `FOR SYSTEM_TIME AS OF` the issue time and compares them with today's data and rules (`MATCH` / `DATA_CHANGED` / `RULES_CHANGED` / `CHAIN_BROKEN`). `CALL AQ.TAMPER_TEST(...)` overwrites one reading inside a savepoint, shows the receipt catching it with the old value from history, and rolls back; the site's Receipt tab runs it live.
+  - `RUNSTATS` through `SYSPROC.ADMIN_CMD` after each load; `EXPLAIN` confirms a one-day query reads one monthly partition.
 
 More detail and a diagram: [architecture.md](architecture.md).
 
@@ -173,6 +191,7 @@ cp .env.example .env
 |---|---|
 | `DB2_PASSWORD` | password of the Db2 instance owner `db2inst1` |
 | `DB2_READER_PASSWORD` | password of `aqreader`, the read-only user for the question box |
+| `DB2_APP_USER`, `DB2_APP_PASSWORD` | the web app's own ID (`aqapp`, SELECT and INSERT only); leave the password empty to run the app as the owner |
 | `DB2_HOST`, `DB2_PORT`, `DB2_DATABASE` | where Db2 runs (defaults suit Compose) |
 | `OLLAMA_URL`, `LLM_MODEL`, `EMBED_MODEL` | local Granite models |
 
@@ -194,9 +213,10 @@ cp .env.example .env
 ```bash
 pip install -r requirements.txt
 set -a; . ./.env; set +a; export DB2_HOST=localhost OLLAMA_URL=http://localhost:11434
-pytest tests/                      # 26 tests; the Db2 ones skip if DB2_PASSWORD is unset
+pytest tests/                      # 39 tests; the Db2 ones skip if DB2_PASSWORD is unset
 python eval/fault_injection.py     # rebuilds schema AQE and plants 198 faults
-python eval/ask_eval.py            # 20 gold questions + 8 attack prompts (18/20, 8/8)
+python eval/ask_eval.py            # 20 gold questions + 8 attack prompts
+python scripts/db2_evidence.py     # proves the Db2 claims on the live database, writes docs/DB2_VERIFICATION.md
 ```
 The tests run against a real Db2, not mocks. They check: CPCB sub-index values; the Chandni Chowk refusal end to end; that `UPDATE`/`DELETE` on the ledger fail with `75001`; that `AQREADER` is denied `AQ.READING`, `AQ.VERDICT` and `AQ.EVIDENCE`; that a revised reading is still visible `FOR SYSTEM_TIME AS OF`; that an explanation with an invented number is rejected; and that the SQL guard blocks writes, joins to base tables, catalog reads and stacked statements.
 
@@ -228,9 +248,9 @@ The tests run against a real Db2, not mocks. They check: CPCB sub-index values; 
 
 ## Known Limitations & Future Roadmap
 - **Units:** OpenAQ labels NO2, SO2 and CO as "ppb", but the values match CPCB's native units (µg/m³, CO in mg/m³), so we treat them as CPCB units. If that assumption is wrong for a station, its gaseous sub-indices are off.
-- **15-minute rows:** the OpenAQ copy repeats each hourly value as four 15-minute rows; we bucket by the hour they start in and count an hour as present with one plausible row. Different choices change "missing hour" counts (see the ThePrint comparison).
+- **Hourly data capture:** most stations publish four 15-minute readings per hour (for PM, often the same value four times; for gases, usually distinct), and a few publish one per hour for weeks. An hour counts as valid when at least 75% of the readings the station published per hour that day are plausible (3 of 4, or 1 of 1). CPCB does not publish its hourly rule, and other choices change "missing hour" counts (see the ThePrint comparison).
 - **No official ground truth** of which station-days CPCB itself rejected; the fault-injection test measures detection on planted faults, not on real failures.
-- **Revisions:** the temporal table records revisions on reload, but we have only one snapshot of the archive, so no real revisions are shown yet.
+- **Revisions:** reloads append and keep every earlier version, but so far we have loaded one snapshot of the archive, so `AQ.V_REVISION` is empty: no real revisions are shown yet.
 - **Question box** uses a small local model on CPU: a new question takes about 20–35 s, and it can misread questions (see the eval). Wrong answers are still read-only and limited to the two views.
 - **Hosting** is a free GitHub Codespace plus a Cloudflare quick tunnel; neither has an uptime guarantee.
 - **Next:** daily ingestion so revisions are captured as they happen, the other Indian cities in the same archive, and a public "refusal feed" newsrooms can embed.

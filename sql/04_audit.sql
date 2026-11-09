@@ -2,6 +2,7 @@
 CREATE TABLE AQ.HOURLY (
   STATION_ID INTEGER NOT NULL, PARAM VARCHAR(12) NOT NULL, HR TIMESTAMP(0) NOT NULL,  -- hour ending at HR
   N_RAW SMALLINT NOT NULL, N_OK SMALLINT NOT NULL,
+  N_EXP SMALLINT NOT NULL,   -- readings per hour the station published that day (4 at 15-minute cadence, 1 hourly)
   AVG_OK DOUBLE, AVG_ALL DOUBLE,
   FLAT SMALLINT NOT NULL DEFAULT 0, JUMP SMALLINT NOT NULL DEFAULT 0, IS_VALID SMALLINT NOT NULL,
   PRIMARY KEY (STATION_ID, PARAM, HR)
@@ -17,46 +18,61 @@ RETURN
    WHERE B.PARAM = P_PARAM
      AND B.BP_LO = (SELECT MAX(BP_LO) FROM AQ.BREAKPOINT WHERE PARAM = P_PARAM AND BP_LO <= P_C)) END@
 
--- Build the hourly layer for hours ending in (P_FROM, P_TO]. The OpenAQ copy of CPCB data has
--- 15-minute rows that repeat the hourly value, stamped from the start of the hour (hh:00..hh:45),
--- so readings are bucketed by the hour they start in. Averages, data capture,
--- stuck-sensor runs (identical consecutive hourly values) and impossible jumps.
+-- Build the hourly layer for hours ending in (P_FROM, P_TO]. Readings are stamped from the start of
+-- their interval (15-minute rows at hh:00..hh:45; some stations publish one row per hour), so they are
+-- bucketed by the hour they start in. An hour is valid when at least MIN_HOUR_CAPTURE (75%) of the readings
+-- expected that hour are plausible: 4 at 15-minute cadence; 1 when the station published hourly (one row an hour,
+-- or 15-minute rows that all repeat the hourly value, as most PM2.5/PM10 feeds in the OpenAQ copy do). Also: stuck-sensor runs (identical consecutive
+-- hourly values, excluded) and impossible hour-to-hour jumps (flagged as evidence, kept in the average).
 CREATE OR REPLACE PROCEDURE AQ.BUILD_HOURLY (IN P_FROM TIMESTAMP, IN P_TO TIMESTAMP)
 LANGUAGE SQL MODIFIES SQL DATA
 BEGIN
-  DECLARE V_MINQ SMALLINT;
-  SELECT SMALLINT(NUM_VALUE) INTO V_MINQ FROM AQ.SETTING WHERE NAME = 'MIN_QUARTERS_PER_HOUR';
+  DECLARE V_CAP DOUBLE;
+  SELECT NUM_VALUE INTO V_CAP FROM AQ.SETTING WHERE NAME = 'MIN_HOUR_CAPTURE';
   DELETE FROM AQ.HOURLY WHERE HR > P_FROM AND HR <= P_TO;
-  INSERT INTO AQ.HOURLY (STATION_ID, PARAM, HR, N_RAW, N_OK, AVG_OK, AVG_ALL, FLAT, JUMP, IS_VALID)
-  WITH BASE AS (
+  INSERT INTO AQ.HOURLY (STATION_ID, PARAM, HR, N_RAW, N_OK, N_EXP, AVG_OK, AVG_ALL, FLAT, JUMP, IS_VALID)
+  WITH B0 AS (
     SELECT R.STATION_ID, R.PARAM, TRUNC(R.TS, 'HH') + 1 HOUR AS HR,
            COUNT(*) AS N_RAW,
            SUM(CASE WHEN R.VALUE BETWEEN P.MIN_V AND P.MAX_V THEN 1 ELSE 0 END) AS N_OK,
            AVG(CASE WHEN R.VALUE BETWEEN P.MIN_V AND P.MAX_V THEN R.VALUE END) AS AVG_OK,
-           AVG(R.VALUE) AS AVG_ALL
+           AVG(R.VALUE) AS AVG_ALL,
+           MAX(CASE WHEN R.VALUE BETWEEN P.MIN_V AND P.MAX_V THEN R.VALUE END) AS MX,
+           MIN(CASE WHEN R.VALUE BETWEEN P.MIN_V AND P.MAX_V THEN R.VALUE END) AS MN
       FROM AQ.READING R JOIN AQ.PLAUSIBLE P ON P.PARAM = R.PARAM
      WHERE R.TS >= P_FROM AND R.TS < P_TO
      GROUP BY R.STATION_ID, R.PARAM, TRUNC(R.TS, 'HH') + 1 HOUR),
+  -- Readings expected per hour, per station-pollutant-day: the most rows any hour had (at most 4), except when
+  -- (nearly) every multi-row hour repeats one value: then the source published hourly and the rows are copies, so 1.
+  B1 AS (
+    SELECT B0.*, SMALLINT(CASE
+             WHEN SUM(CASE WHEN N_OK >= 2 AND MX = MN THEN 1 ELSE 0 END) OVER (PARTITION BY STATION_ID, PARAM, DATE(HR - 1 HOUR))
+                  >= 0.9 * SUM(CASE WHEN N_OK >= 2 THEN 1 ELSE 0 END) OVER (PARTITION BY STATION_ID, PARAM, DATE(HR - 1 HOUR))
+              AND SUM(CASE WHEN N_OK >= 2 THEN 1 ELSE 0 END) OVER (PARTITION BY STATION_ID, PARAM, DATE(HR - 1 HOUR)) > 0 THEN 1
+             ELSE LEAST(4, MAX(N_RAW) OVER (PARTITION BY STATION_ID, PARAM, DATE(HR - 1 HOUR))) END) AS N_EXP
+      FROM B0),
+  BASE AS (
+    SELECT B1.*, CASE WHEN N_OK >= CEILING(V_CAP * N_EXP) THEN 1 ELSE 0 END AS CAP_OK FROM B1),
+  -- Stuck runs and jumps are computed over valid-capture hours only (partitioning by CAP_OK keeps the two sets
+  -- apart), in one pass of window functions with no self-join.
   STEP AS (
-    SELECT B.*, LAG(AVG_OK) OVER (PARTITION BY STATION_ID, PARAM ORDER BY HR) AS PREV_V,
-           LAG(HR) OVER (PARTITION BY STATION_ID, PARAM ORDER BY HR) AS PREV_HR
-      FROM BASE B WHERE N_OK >= V_MINQ),
+    SELECT B.*, LAG(AVG_OK) OVER (PARTITION BY STATION_ID, PARAM, CAP_OK ORDER BY HR) AS PREV_V,
+           LAG(HR) OVER (PARTITION BY STATION_ID, PARAM, CAP_OK ORDER BY HR) AS PREV_HR
+      FROM BASE B),
   ISL AS (
     SELECT S.*, SUM(CASE WHEN PREV_HR = HR - 1 HOUR AND PREV_V = AVG_OK THEN 0 ELSE 1 END)
-                  OVER (PARTITION BY STATION_ID, PARAM ORDER BY HR ROWS UNBOUNDED PRECEDING) AS ISLAND
+                  OVER (PARTITION BY STATION_ID, PARAM, CAP_OK ORDER BY HR ROWS UNBOUNDED PRECEDING) AS ISLAND
       FROM STEP S),
   RUNS AS (
-    SELECT I.*, COUNT(*) OVER (PARTITION BY STATION_ID, PARAM, ISLAND) AS RUN_LEN FROM ISL I),
+    SELECT I.*, COUNT(*) OVER (PARTITION BY STATION_ID, PARAM, CAP_OK, ISLAND) AS RUN_LEN FROM ISL I),
   MARKED AS (
-    SELECT R.STATION_ID, R.PARAM, R.HR,
-           CASE WHEN R.RUN_LEN >= P.FLAT_HOURS THEN 1 ELSE 0 END AS FLAT,
-           CASE WHEN R.PREV_HR = R.HR - 1 HOUR AND ABS(R.AVG_OK - R.PREV_V) > P.MAX_JUMP THEN 1 ELSE 0 END AS JUMP
+    SELECT R.*,
+           CASE WHEN R.CAP_OK = 1 AND R.RUN_LEN >= P.FLAT_HOURS THEN 1 ELSE 0 END AS FLAT,
+           CASE WHEN R.CAP_OK = 1 AND R.PREV_HR = R.HR - 1 HOUR AND ABS(R.AVG_OK - R.PREV_V) > P.MAX_JUMP THEN 1 ELSE 0 END AS JUMP
       FROM RUNS R JOIN AQ.PLAUSIBLE P ON P.PARAM = R.PARAM)
-  SELECT B.STATION_ID, B.PARAM, B.HR, B.N_RAW, B.N_OK, B.AVG_OK, B.AVG_ALL,
-         COALESCE(M.FLAT, 0), COALESCE(M.JUMP, 0),
-         CASE WHEN B.N_OK >= V_MINQ AND COALESCE(M.FLAT, 0) = 0 THEN 1 ELSE 0 END
-    FROM BASE B LEFT JOIN MARKED M
-      ON M.STATION_ID = B.STATION_ID AND M.PARAM = B.PARAM AND M.HR = B.HR
+  SELECT B.STATION_ID, B.PARAM, B.HR, B.N_RAW, B.N_OK, B.N_EXP, B.AVG_OK, B.AVG_ALL, B.FLAT, B.JUMP,
+         CASE WHEN B.CAP_OK = 1 AND B.FLAT = 0 THEN 1 ELSE 0 END
+    FROM MARKED B
    WHERE B.HR > P_FROM AND B.HR <= P_TO;
 END@
 
@@ -69,7 +85,7 @@ BEGIN
   DECLARE V_MIN24 SMALLINT; DECLARE V_MIN8 SMALLINT; DECLARE V_MINP SMALLINT;
   DECLARE V_NPARAMS SMALLINT DEFAULT 0; DECLARE V_HAS_PM SMALLINT DEFAULT 0;
   DECLARE V_AQI SMALLINT; DECLARE V_NAIVE SMALLINT; DECLARE V_PROM VARCHAR(12);
-  DECLARE V_SUSPECT SMALLINT DEFAULT 0; DECLARE V_STATUS VARCHAR(16); DECLARE V_REASON VARCHAR(400);
+  DECLARE V_SUSPECT SMALLINT DEFAULT 0; DECLARE V_EXCL SMALLINT DEFAULT 0; DECLARE V_JUMPS SMALLINT DEFAULT 0; DECLARE V_STATUS VARCHAR(16); DECLARE V_REASON VARCHAR(400);
 
   DECLARE GLOBAL TEMPORARY TABLE SESSION.PSTAT (
     PARAM VARCHAR(12), AVG_HOURS SMALLINT, VALID_H SMALLINT, BAD_RAW INTEGER, WORST_RAW DOUBLE,
@@ -133,13 +149,21 @@ BEGIN
     INTO V_NPARAMS, V_HAS_PM, V_AQI
     FROM SESSION.PSTAT WHERE SUBIDX IS NOT NULL;
   SELECT MAX(NAIVE_IDX) INTO V_NAIVE FROM SESSION.PSTAT;
-  SELECT COUNT(*) INTO V_SUSPECT FROM SESSION.PSTAT WHERE FLAT_H > 0 OR JUMP_H > 0 OR BAD_RAW > 0;
+  -- Only pollutants that feed the AQI can make it suspect.
+  SELECT COALESCE(SUM(CASE WHEN FLAT_H > 0 OR BAD_RAW > 0 THEN 1 ELSE 0 END), 0),
+         COALESCE(SUM(CASE WHEN JUMP_H > 0 THEN 1 ELSE 0 END), 0),
+         COALESCE(SUM(CASE WHEN FLAT_H > 0 OR JUMP_H > 0 OR BAD_RAW > 0 THEN 1 ELSE 0 END), 0)
+    INTO V_EXCL, V_JUMPS, V_SUSPECT
+    FROM SESSION.PSTAT WHERE SUBIDX IS NOT NULL;
 
   IF V_NPARAMS >= V_MINP AND V_HAS_PM = 1 THEN
-    SELECT PARAM INTO V_PROM FROM SESSION.PSTAT WHERE SUBIDX = V_AQI FETCH FIRST 1 ROW ONLY;
+    SELECT PARAM INTO V_PROM FROM SESSION.PSTAT WHERE SUBIDX = V_AQI    -- ties: PM first, a fixed order
+     ORDER BY CASE PARAM WHEN 'pm25' THEN 1 WHEN 'pm10' THEN 2 WHEN 'no2' THEN 3 WHEN 'o3' THEN 4 WHEN 'co' THEN 5 ELSE 6 END
+     FETCH FIRST 1 ROW ONLY;
     SET V_STATUS = CASE WHEN V_SUSPECT > 0 THEN 'SUSPECT' ELSE 'VALID' END;
     SET V_REASON = 'AQI from ' || RTRIM(CHAR(V_NPARAMS)) || ' pollutants with enough valid data'
-                   || CASE WHEN V_SUSPECT > 0 THEN '; some readings failed plausibility, stuck-sensor or jump checks and were excluded' ELSE '' END;
+                   || CASE WHEN V_EXCL > 0 THEN '; implausible or stuck readings were excluded' ELSE '' END
+                   || CASE WHEN V_JUMPS > 0 THEN '; impossible hour-to-hour jumps were flagged (kept in the average)' ELSE '' END;
   ELSE
     SET V_AQI = NULL; SET V_PROM = NULL; SET V_STATUS = 'NOT_COMPUTABLE';
     SET V_REASON = 'Only ' || RTRIM(CHAR(V_NPARAMS)) || ' pollutant(s) had enough valid hours'
