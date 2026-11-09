@@ -40,6 +40,7 @@ probe() {
     -d '{"question":"How many station-days were suspect in December?","fresh":true}' |
     while IFS= read -r l; do printf '%5.1f %s\n' "$(echo "$(date +%s.%N) - $s0" | bc)" "$(echo "$l" | cut -c1-90)"; done | awk '!/"tok"/ || ++n<=3'
   echo "--- start log"; ssh_cs 'tail -n 8 /tmp/aqi-start.log | cut -c1-200; tail -n 2 /tmp/cloudflared.log | cut -c1-200'
+  echo "--- containers and Db2 log"; ssh_cs 'cd /workspaces/aqi-truth && docker compose ps -a --format "{{.Name}} {{.State}} {{.Status}}"; docker compose logs --tail 40 db2 2>&1 | cut -c1-180'
 }
 
 case "${1:-}" in
