@@ -26,13 +26,15 @@ if ! pgrep -x cloudflared >/dev/null; then
 fi
 ( for i in $(seq 1 60); do u=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log 2>/dev/null | head -1); [ -n "$u" ] && { echo "$u" > /tmp/tunnel.url; break; }; sleep 2; done ) &
 echo "starting compose"
-docker compose up -d --build
-until [ "$(docker compose ps -a setup --format '{{.State}}')" = "exited" ]; do sleep 15; done
-# Existing Db2 containers predate the app user: create the OS users again (idempotent), then apply schema
-# migrations (new triggers, indexes, views, grants) without touching loaded data.
-docker compose up -d db2 >/dev/null   # picks up DB2_APP_PASSWORD if the container predates it
-until docker compose exec -T db2 bash -c 'su - db2inst1 -c "db2 connect to ${DBNAME:-AQIDB}" >/dev/null'; do sleep 10; done
+# Db2 first. A recreated container (new settings) keeps the database volume but not the OS users that Db2
+# authenticates against, and its health check waits for them; so create them (idempotent) once Db2 answers.
+docker compose up -d db2 ollama
+until docker compose exec -T db2 bash -c 'su - db2inst1 -c "db2 connect to ${DBNAME:-AQIDB}" >/dev/null 2>&1'; do sleep 10; done
 docker compose exec -T db2 bash /var/custom/01_reader.sh
+echo "db2 ready, users in place"
+until docker compose up -d --build; do echo "compose up failed; retrying in 30 s"; sleep 30; done
+until [ "$(docker compose ps -a setup --format '{{.State}}')" = "exited" ]; do sleep 15; done
+# Schema migrations (new triggers, indexes, views, grants) without touching loaded data.
 docker compose run --rm setup python src/load.py data/sample 2025-10-01 2025-10-31 --if-empty --no-embed || true
 # One-off after the 9 Nov 2026 method fixes: re-audit the loaded range with the new rules (appends new verdicts with
 # receipts; the readings and their history are untouched), then refresh the Db2 evidence file.
