@@ -9,7 +9,12 @@ const fmt = new Intl.NumberFormat("en-IN");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cat = a => a == null ? "" : a <= 50 ? "Good" : a <= 100 ? "Satisfactory" : a <= 200 ? "Moderate" : a <= 300 ? "Poor" : a <= 400 ? "Very Poor" : "Severe";
 const icon = (id, cls = "ic") => `<svg class="${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
-const DAYS = []; for (let t = Date.UTC(2025,8,1); t <= Date.UTC(2025,11,31); t += 864e5) DAYS.push(new Date(t).toISOString().slice(0,10));
+// Two audited periods: the Sep-Dec 2025 study period (the headline) and Oct-Nov 2026 (as far as the archive reaches).
+const PERIODS = [{id: "2025", label: "Sep–Dec 2025", from: "2025-09-01", to: "2025-12-31"},
+                 {id: "2026", label: "Oct–Nov 2026", from: "2026-10-01", to: "2026-10-01"}];
+const span = (a, b) => { const out = []; for (let t = Date.parse(a + "T00:00:00Z"); t <= Date.parse(b + "T00:00:00Z"); t += 864e5) out.push(new Date(t).toISOString().slice(0, 10)); return out; };
+let PERIOD = PERIODS[0], DAYS = span(PERIOD.from, PERIOD.to);
+const periodOf = d => PERIODS.find(p => d >= p.from && d <= p.to) || PERIODS[0];
 const niceDay = d => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", {day:"numeric", month:"short", year:"numeric", timeZone:"UTC"});
 const shortName = n => n.split(",")[0];
 
@@ -37,7 +42,10 @@ async function init() {
   STATIONS = stations; MAP = map; RECORDED = rec;
   const dup = {}; for (const s of stations) dup[shortName(s.name)] = (dup[shortName(s.name)] || 0) + 1;
   for (const s of stations) { s.label = dup[shortName(s.name)] > 1 ? `${shortName(s.name)} (${s.operator || "?"})` : shortName(s.name); s.n = {V:0,S:0,N:0}; }
-  for (const c of calendar) { (BY[c.s] ||= {})[c.d] = c; const s = stations.find(x => x.id === c.s); if (s) s.n[c.st]++; }
+  for (const c of calendar) { (BY[c.s] ||= {})[c.d] = c; const s = stations.find(x => x.id === c.s); if (s && c.d <= PERIODS[0].to) s.n[c.st]++; }
+  const last = calendar.reduce((m, c) => c.d > m ? c.d : m, "");
+  if (last >= PERIODS[1].from) PERIODS[1].to = last; else PERIODS.pop();
+  periodSwitch();
   hero(stats, calendar);
   drawMap(); drawCalendar();
   $("#station").innerHTML = [...stations].sort((a,b) => a.label.localeCompare(b.label)).map(s => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
@@ -103,14 +111,17 @@ function drawMap() {
 }
 
 /* ---------- station, strip, day ---------- */
-function inSnapshot(s, d) { const c = (BY[s] || {})[d]; return c && (c.st !== "V" || d === "2025-10-21"); }
+function inSnapshot(s, d) { const c = (BY[s] || {})[d]; return c && (c.st !== "V" || d === "2025-10-21" || d === PERIODS[PERIODS.length - 1].to); }
 
 function select(s, d, scroll = false) {
   const changed = s !== CUR.s; CUR = {s, d};
   const st = STATIONS.find(x => x.id === s); if (!st) return;
+  const p = periodOf(d);
+  if (p !== PERIOD) { PERIOD = p; DAYS = span(p.from, p.to); $("#strip").innerHTML = ""; periodSwitch(); }
   $("#station").value = s; $("#day").value = d;
   $("#st-name").textContent = st.label;
-  $("#st-sub").textContent = `${st.name.split(" - ")[0]} · operator ${st.operator || "unknown"} · ${st.n.N} days with no AQI, ${st.n.S} suspect`;
+  const n = {V: 0, S: 0, N: 0}; for (const day of DAYS) { const c = (BY[s] || {})[day]; if (c) n[c.st]++; }
+  $("#st-sub").textContent = `${st.name.split(" - ")[0]} · operator ${st.operator || "unknown"} · ${PERIOD.label}: ${n.N} days with no AQI, ${n.S} suspect`;
   if (MAP && MAP.stations[s]) { const r = $("#map .sel-ring"); r.setAttribute("cx", MAP.stations[s][0]); r.setAttribute("cy", MAP.stations[s][1]); }
   if (changed || !$("#strip").childElementCount) strip(s);
   $$("#strip .t.sel").forEach(x => x.classList.remove("sel"));
@@ -118,12 +129,26 @@ function select(s, d, scroll = false) {
   load();
 }
 
+function periodSwitch() {
+  const box = $("#periods"); if (!box) return;
+  box.hidden = PERIODS.length < 2;
+  box.innerHTML = PERIODS.map(p => `<button type="button" aria-pressed="${p === PERIOD}" data-p="${p.id}">${p.label}</button>`).join("");
+  box.onclick = e => { const b = e.target.closest("button"); if (!b) return; const p = PERIODS.find(x => x.id === b.dataset.p);
+    if (p !== PERIOD) select(CUR.s, p.id === "2026" ? p.to : "2025-10-23"); };
+  $("#day").min = PERIOD.from; $("#day").max = PERIOD.to;
+  $("#strip").setAttribute("aria-label", "Days, " + PERIOD.label);
+}
+
 function strip(s) {
   const by = BY[s] || {};
+  $("#strip").style.gridTemplateColumns = `repeat(${DAYS.length},1fr)`;
   $("#strip").innerHTML = DAYS.map(d => { const c = by[d];
     const k = c ? c.st : "x", off = !LIVE && c && !inSnapshot(s, d) ? " off" : "";
     return `<div class="t ${k === "V" ? "" : k}${off}" role="option" data-d="${d}" title="${niceDay(d)}${c ? ` · ${{V:"valid",S:"suspect",N:"no AQI"}[c.st]} · audited ${c.a ?? "—"} / plain average ${c.n ?? "—"}` : " · not audited"}"></div>`; }).join("");
-  if (!$("#strip + .months")) $("#strip").insertAdjacentHTML("afterend", `<div class="months"><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span></div>`);
+  $("#strip + .months")?.remove();
+  const cnt = {}; for (const d of DAYS) cnt[d.slice(0, 7)] = (cnt[d.slice(0, 7)] || 0) + 1;
+  const ms = Object.keys(cnt), name = m => new Date(m + "-01T00:00:00Z").toLocaleDateString("en-GB", {month: "short", timeZone: "UTC"});
+  $("#strip").insertAdjacentHTML("afterend", `<div class="months" style="grid-template-columns:${ms.map(m => cnt[m] + "fr").join(" ")}">${ms.map(m => `<span>${cnt[m] > 3 ? name(m) : ""}</span>`).join("")}</div>`);
   $("#strip").onclick = e => { const t = e.target.closest(".t"); if (t && !t.classList.contains("x")) select(CUR.s, t.dataset.d); };
 }
 
