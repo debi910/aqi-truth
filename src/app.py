@@ -1,5 +1,5 @@
 """AQI Truth web API (FastAPI). Serves the page in web/ and reads everything from Db2."""
-import collections, datetime as dt, decimal, json, os, re, sys, threading, time
+import collections, datetime as dt, decimal, json, os, queue, re, sys, threading, time
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -78,8 +78,14 @@ def day_payload(station: int, day: str, with_llm: bool):
                               k="ok" if valid else ("stuck" if flat else ("bad" if nok == 0 else "short")), j=bool(jump))
     expl = rows(conn(), "SELECT TEXT, MODEL, RULE_REFS, VECTOR_AGREES FROM AQ.EXPLANATION WHERE RUN_ID=? ORDER BY CREATED_AT DESC FETCH FIRST 1 ROW ONLY", (run,))
     if not expl and with_llm:
-        with LLM_LOCK:
-            e = ex.explain(conn(), run); expl = [(e["text"], e["model"], ",".join(e["cited"]), int(e["vector_agrees"]))]
+        # Never make a visitor wait behind someone else's question: if Granite is busy, show the template now
+        # (not stored) and let a later visit store Granite's explanation.
+        if LLM_LOCK.acquire(blocking=False):
+            try: e = ex.explain(conn(), run)
+            finally: LLM_LOCK.release()
+        else:
+            e = ex.explain(conn(), run, use_llm=False, store=False)
+        expl = [(e["text"], e["model"], ",".join(e["cited"]), int(e["vector_agrees"]))]
     return dict(run_id=run, station=name, operator=op, day=day, status=status, aqi=aqi, naive_aqi=naive, prominent=prom,
                 valid_params=nparams, reason=reason, grid=grid,
                 evidence=[dict(param=r[0], check=r[1], observed=r[2], passed=bool(r[3]), rule=r[4], source=r[5], url=r[6]) for r in ev],
@@ -137,17 +143,32 @@ def ask_events(question, fresh):
         yield {"e": "db2"}
         r, ms = run_timed(sql); log_ask(question, r, "REUSED", None, ms)
         yield {"e": "result", **r, "source": "reused", "reused_from": plain(at), "ms_db2": ms}; return
-    if not LLM_LOCK.acquire(blocking=False):
-        yield {"e": "queue"}
-        LLM_LOCK.acquire()
+    # Granite runs in its own thread that holds the lock only while it generates. The lock is never held across a
+    # yield, so a visitor who closes the tab mid-answer (or while queued) cannot leave the question box locked.
+    pieces, gone = queue.Queue(), threading.Event()
+    def produce():
+        with LLM_LOCK:
+            if gone.is_set(): pieces.put(None); return
+            pieces.put({"e": "model"})
+            try:
+                for piece in llm.stream(asker.prompt(question), max_tokens=200, system=asker.SYSTEM, stop=asker.sql_done):
+                    if gone.is_set(): break
+                    pieces.put(piece)
+            except Exception as e:
+                pieces.put(e)
+            finally:
+                pieces.put(None)
+    if LLM_LOCK.locked(): yield {"e": "queue"}
+    threading.Thread(target=produce, daemon=True).start()
+    info = {}
     try:
-        yield {"e": "model"}
-        info = {}
-        for piece in llm.stream(asker.prompt(question), max_tokens=200, system=asker.SYSTEM, stop=asker.sql_done):
-            if isinstance(piece, dict): info = piece
+        while (piece := pieces.get()) is not None:
+            if isinstance(piece, Exception): raise piece
+            if isinstance(piece, dict) and piece.get("e") == "model": yield piece
+            elif isinstance(piece, dict): info = piece
             else: yield {"e": "tok", "t": piece}
     finally:
-        LLM_LOCK.release()
+        gone.set()
     sql = asker.extract(info.get("text", ""))
     yield {"e": "check", "sql": sql}
     yield {"e": "db2"}

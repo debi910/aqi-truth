@@ -40,7 +40,7 @@ def template(v, ev):
         if naive is not None and naive != aqi: s += f" A plain average of all values gives {naive}."
     return s
 
-def explain(conn, run_id, use_llm=True):
+def explain(conn, run_id, use_llm=True, store=True):
     v, ev = facts_for(conn, run_id)
     sid, name, day, status, aqi, naive, prom, reason = v
     cited = sorted({e[3] for e in ev}) or ["CPCB-BREAKPOINTS"]
@@ -65,6 +65,8 @@ def explain(conn, run_id, use_llm=True):
         else:
             model = f"template (LLM rejected: {sorted(numbers(out) - allowed)[:3]}{bad_words[:2]}{wrong_cat[:2]})"
             print("REJECTED LLM TEXT:", out, file=sys.stderr)
+    if not store:   # a stand-in shown while the model is busy; not written to the ledger
+        return dict(run_id=run_id, text=text, model=model, cited=cited, vector_top=[r[0] for r in near], vector_agrees=bool(agrees))
     cur = conn.cursor()
     cur.execute("INSERT INTO AQ.EXPLANATION (RUN_ID, MODEL, TEXT, GROUNDED, RULE_REFS, VECTOR_AGREES) VALUES (?,?,?,?,?,?)",
                 (run_id, model[:60], text[:2000], grounded, ",".join(cited)[:200], agrees))
