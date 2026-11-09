@@ -169,6 +169,12 @@
       <div class="node db"><span class="tag"><svg class="ic"><use href="#i-lock"/></svg>Db2</span><b>Verdict + evidence ledger</b><p>append-only, enforced by triggers · VECTOR search over rule texts</p></div>
       <div class="node ai"><span class="tag"><svg class="ic"><use href="#i-cpu"/></svg>Granite</span><b>Explain · Ask</b><p>numbers and words checked by code · SQL run as a read-only user</p></div>
     </div>
+    <ul class="proof">
+      <li><b>Verifiable receipts</b>Every verdict gets a SHA-256 receipt of the exact readings and rules it judged, chained to the one before. <code>AQ.VERIFY_RECEIPT</code> replays the inputs <code>FOR SYSTEM_TIME AS OF</code> the issue time.</li>
+      <li><b>Row access control</b>A row permission on <code>AQ.VERDICT</code> hides the out-of-scope monitor from every ID without the <code>AQAUDITOR</code> role.</li>
+      <li><b>Least privilege</b>The app's ID can only <code>SELECT</code> and <code>INSERT</code>, the question box's ID can read two views, and even the owner gets <code>SQLSTATE 75001</code> on an edit.</li>
+      <li><b>Checked by one command</b><code>python scripts/db2_evidence.py</code> runs 25 Db2 claims against the live database and records each answer. <a href="https://github.com/debi910/aqi-truth/blob/main/docs/DB2_VERIFICATION.md">See the results</a></li>
+    </ul>
   </section>
 </main>
 

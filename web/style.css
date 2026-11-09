@@ -241,6 +241,12 @@ td .ok{color:var(--green)}td .no{color:var(--red)}
 .node b{display:block;font:600 14.5px var(--mono);margin:8px 0 4px;word-break:break-word}
 .node p{margin:0;font-size:13px;color:var(--ink-2)}
 .tag{display:inline-flex;align-items:center;gap:5px;font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.proof{list-style:none;padding:0;margin:34px 0 0;display:grid;grid-template-columns:repeat(4,1fr);gap:22px}
+.proof li{font-size:13.5px;color:var(--ink-2);border-top:1px solid var(--rule-2);padding-top:12px}
+.proof b{display:block;color:var(--ink);font-size:14.5px;margin-bottom:4px}
+.proof code{font-size:12.5px;word-break:break-word}
+@media (max-width:900px){.proof{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.proof{grid-template-columns:1fr}}
 .node.db .tag{color:var(--blue)}.node.ai .tag{color:var(--amber)}
 .tag .ic{width:13px;height:13px}
 
