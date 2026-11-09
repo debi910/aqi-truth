@@ -48,7 +48,7 @@
   <section class="hero wrap" aria-labelledby="h1">
     <div class="hero-copy">
       <p class="kicker">Delhi · <span id="k-stations">34</span> monitors · 1 Sep – 31 Dec 2025</p>
-      <h1 id="h1">On <span class="num red" id="h-shown">190</span> station-days, a dashboard average still printed an AQI. CPCB's own rules say there was none.</h1>
+      <h1 id="h1">On <span class="num red" id="h-shown">338</span> station-days, a dashboard average still printed an AQI. CPCB's own rules say there was none.</h1>
       <p class="lede">AQI Truth re-checks every monitor-hour inside <b>IBM Db2</b>, applies the CPCB method as stored procedures, and refuses when the data can't support a number. <b>IBM Granite</b> only explains verdicts and turns questions into read-only SQL. It never decides.</p>
       <dl class="figures" id="figures"></dl>
     </div>
@@ -82,6 +82,7 @@
             <button role="tab" aria-selected="true" data-tab="why">Why</button>
             <button role="tab" aria-selected="false" data-tab="hours">Hour by hour</button>
             <button role="tab" aria-selected="false" data-tab="evidence">Evidence ledger</button>
+            <button role="tab" aria-selected="false" data-tab="receipt">Receipt</button>
           </div>
           <div class="panels">
             <div class="panel" data-panel="why" id="p-why"></div>
@@ -94,6 +95,7 @@
               <p class="fine"><svg class="ic"><use href="#i-lock"/></svg> Written by the stored procedure <code>AQ.COMPUTE_AQI_AUDITED</code>. Db2 triggers reject any later edit (SQLSTATE 75001).</p>
               <div class="tablewrap"><table id="evidence"></table></div>
             </div>
+            <div class="panel" data-panel="receipt" id="p-receipt" hidden></div>
           </div>
         </div>
       </div>
