@@ -89,7 +89,12 @@ def main():
         cur.execute(f"""SELECT DISTINCT STATION_ID, DATE(TS) FROM {s}.READING WHERE SYS_START >= ? AND DATE(TS) BETWEEN ? AND ?
                         UNION SELECT DISTINCT STATION_ID, DATE(TS) FROM {s}.READING_HIST WHERE SYS_END >= ? AND DATE(TS) BETWEEN ? AND ?""",
                     (load_start, d, end, load_start, d, end))
-        changed = cur.fetchall()
+        changed = set(cur.fetchall())
+        # New days with no readings at all still need a verdict (NOT_COMPUTABLE), like a full audit gives them.
+        cur.execute(f"""SELECT S.STATION_ID, D.DAY FROM {s}.STATION S,
+                          (SELECT CAST(? AS DATE) + (N - 1) DAYS AS DAY FROM (SELECT ROW_NUMBER() OVER () AS N FROM SYSCAT.COLUMNS FETCH FIRST 400 ROWS ONLY) X) D
+                        WHERE D.DAY <= CAST(? AS DATE) AND NOT EXISTS (SELECT 1 FROM {s}.VERDICT V WHERE V.STATION_ID = S.STATION_ID AND V.DAY = D.DAY)""", (d, end))
+        changed = sorted(changed | set(cur.fetchall()))
         for i, (sid, day) in enumerate(changed, 1):
             cur.callproc(f"{s}.COMPUTE_AQI_AUDITED", (sid, day, 0))
             if i % 200 == 0: conn.commit()

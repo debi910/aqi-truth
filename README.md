@@ -76,6 +76,8 @@ On top of that:
 | …of those, shown as Very Poor or Severe | 147 |
 | Station-days computable, but with impossible or stuck readings excluded or impossible jumps flagged (`SUSPECT`) | 708 |
 
+**Second period, 1 Oct to 5 Nov 2026** (as far as the public archive reached on 9 Nov; it lags about 4 days). Same stations, same rules, loaded with `src/load.py --append` next to 2025 so the 2025 history and receipts are untouched. The site has a period switch above the day strip. 512,410 readings, 1,224 station-days: **289** with no AQI under CPCB rules, **167** of them still shown by a plain average (58 as Very Poor or Severe), 81 SUSPECT. Recent days are re-fetched later; any value CPCB revised in the meantime is MERGEd in, the old value stays in `READING_HIST`, and the affected receipts report `DATA_CHANGED`.
+
 **How much the headline depends on one choice.** CPCB publishes the 16-hour and 3-pollutant rules but not when an hour counts as valid. We count an hour when at least 75% of its expected readings are plausible (3 of 4 at 15-minute cadence; copies of one hourly value count as one reading). With the looser rule we used until 9 Nov 2026 (one plausible reading makes the hour valid), the count of no-AQI station-days is **247** instead of 395. Most of the difference is four city-wide feed gaps (20 Oct, 3, 10 and 18 Nov 2025), when many stations sent only one or two readings an hour. Both numbers come from the same Db2 procedures; every verdict ever computed is kept in `AQ.V_VERDICT_HISTORY`.
 
 Example: **Chandni Chowk, 23 Oct 2025.** From mid-afternoon the monitor reports only zeros. A plain average gives **175 (Moderate)**. Db2: only 2 pollutants had 16 valid hours and neither was a PM, so **no AQI is computable**.

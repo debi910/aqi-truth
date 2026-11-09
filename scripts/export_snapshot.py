@@ -21,6 +21,9 @@ def main():
     picks = list(FEATURED)
     picks += [(r[0], str(r[1])) for r in rows(c, "SELECT STATION_ID, DAY FROM AQ.V_DAY WHERE STATION_ID <> 8118 AND STATUS <> 'VALID'")]
     picks += [(r[0], "2025-10-21") for r in rows(c, "SELECT STATION_ID FROM AQ.STATION WHERE STATION_ID <> 8118")]
+    last = rows(c, "SELECT MAX(DAY) FROM AQ.V_DAY")[0][0]      # the landing day of the latest period, for every station
+    if str(last) > "2025-12-31":
+        picks += [(r[0], str(last)) for r in rows(c, "SELECT STATION_ID FROM AQ.STATION WHERE STATION_ID <> 8118")]
     seen, n = set(), 0
     for i, (s, d) in enumerate(picks):
         if (s, d) in seen: continue

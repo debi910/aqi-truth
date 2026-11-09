@@ -59,5 +59,24 @@ if [ ! -f data/.full_loaded ]; then
   mkdir -p docs && docker compose run --rm -v "$PWD/docs:/app/docs" setup python scripts/db2_evidence.py || true
   docker compose restart app
 fi
+# Second period, Oct 2026 onward (as far as the archive reaches). Each fetch goes to a new folder, so a later
+# fetch of the same days MERGEs in any values CPCB revised since; the old ones stay in READING_HIST.
+if [ -f data/.full_loaded ] && [ ! -f data/.y2026a ]; then
+  docker compose run --rm -v "$PWD/data/raw:/app/data/raw" setup sh -c \
+    "python scripts/fetch_openaq.py data/raw/2026a 2026 10,11 && python src/load.py data/raw/2026a 2026-10-01 2026-11-05 --append --no-embed" \
+    && touch data/.y2026a
+  docker compose restart app
+fi
+# Re-fetch of the same 2026 days on 10 Nov (approved 9 Nov): CPCB revises recent values, so this MERGE records real
+# revisions in READING_HIST and the affected receipts report DATA_CHANGED. Loads up to the last well-covered day.
+if [ -f data/.y2026a ] && [ ! -f data/.y2026b ] && [ "$(date -u +%F)" \> "2026-11-09" ]; then
+  docker compose run --rm -v "$PWD/data/raw:/app/data/raw" setup python scripts/fetch_openaq.py data/raw/2026b 2026 10,11 || true
+  END=$(cat data/raw/2026b/*-2026-11.csv 2>/dev/null | grep -oE '"2026-11-[0-9]{2}T' | sort | uniq -c | awk '$1>5000{d=$2} END{print substr(d,2,10)}')
+  if [ -n "$END" ]; then
+    docker compose run --rm -v "$PWD/data/raw:/app/data/raw" setup python src/load.py data/raw/2026b 2026-10-01 "$END" --append --no-embed \
+      && touch data/.y2026b
+    docker compose restart app
+  fi
+fi
 [ -n "${CODESPACE_NAME:-}" ] && gh codespace ports visibility 8000:public -c "$CODESPACE_NAME" 2>/dev/null || echo "port visibility is set by the keep-alive job"
 echo "READY: $URL"

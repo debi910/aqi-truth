@@ -15,7 +15,7 @@ AQ.V_DAY(STATION VARCHAR, OPERATOR VARCHAR, DAY DATE, STATUS VARCHAR -- 'VALID'|
          AQI SMALLINT -- audited AQI, NULL when NOT_COMPUTABLE, NAIVE_AQI SMALLINT -- plain average, PROMINENT VARCHAR, VALID_PARAMS SMALLINT, REASON VARCHAR)
 AQ.V_CHECK(STATION VARCHAR, DAY DATE, PARAM VARCHAR -- pm25|pm10|no2|so2|o3|co|ALL, CHECK_CODE VARCHAR -- COVERAGE|PLAUSIBLE|STUCK|JUMP|SUBINDEX|MIN_PARAMS,
            OBSERVED VARCHAR, PASSED SMALLINT -- 1 passed 0 failed, RULE_REF VARCHAR)
-Station names look like 'Chandni Chowk, Delhi - IITM' (always match with LIKE '%Chandni Chowk%'). Data covers 2025-09-01 to 2025-12-31.
+Station names look like 'Chandni Chowk, Delhi - IITM' (always match with LIKE '%Chandni Chowk%'). Data covers 2025-09-01 to 2025-12-31 and 2026-10-01 to 2026-11-05.
 AQI is NULL on NOT_COMPUTABLE days: add AQI IS NOT NULL when ranking by AQI. A failed check has PASSED = 0."""
 EXAMPLES = """Q: Which stations had the most days with no computable AQI?
 SQL: SELECT STATION, COUNT(*) AS DAYS FROM AQ.V_DAY WHERE STATUS = 'NOT_COMPUTABLE' GROUP BY STATION ORDER BY DAYS DESC

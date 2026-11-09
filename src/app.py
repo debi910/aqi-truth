@@ -47,13 +47,18 @@ def calendar():
     return [dict(s=r[0], d=str(r[1]), st=r[2][0], a=r[3], n=r[4]) for r in rs]
 
 @app.get("/api/stats")
-def stats():
+def stats(start: str = "2025-09-01", end: str = "2025-12-31"):
+    """Headline counts for one period (default: the Sep-Dec 2025 study period)."""
+    a, b = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
     r = rows(conn(), """SELECT COUNT(*), SUM(CASE WHEN STATUS='NOT_COMPUTABLE' THEN 1 ELSE 0 END),
         SUM(CASE WHEN STATUS='NOT_COMPUTABLE' AND NAIVE_AQI IS NOT NULL THEN 1 ELSE 0 END),
         SUM(CASE WHEN STATUS='NOT_COMPUTABLE' AND NAIVE_AQI > 300 THEN 1 ELSE 0 END),
         SUM(CASE WHEN STATUS='SUSPECT' THEN 1 ELSE 0 END),
-        (SELECT COUNT(*) FROM AQ.READING WHERE STATION_ID <> 8118 AND PARAM IN ('pm25','pm10','no2','so2','o3','co')) FROM AQ.V_DAY""")[0]
-    return dict(station_days=r[0], not_computable=r[1], shown_anyway=r[2], shown_anyway_very_poor=r[3], suspect=r[4], readings=r[5])
+        (SELECT COUNT(*) FROM AQ.READING WHERE STATION_ID <> 8118 AND PARAM IN ('pm25','pm10','no2','so2','o3','co')
+            AND TS >= TIMESTAMP(CAST(? AS DATE)) AND TS < TIMESTAMP(CAST(? AS DATE)) + 1 DAY)
+        FROM AQ.V_DAY WHERE DAY BETWEEN ? AND ?""", (a, b, a, b))[0]
+    return dict(start=start, end=end, station_days=r[0], not_computable=r[1], shown_anyway=r[2], shown_anyway_very_poor=r[3],
+                suspect=r[4], readings=r[5])
 
 def day_payload(station: int, day: str, with_llm: bool):
     d = dt.date.fromisoformat(day)

@@ -282,3 +282,9 @@ td .ok{color:var(--green)}td .no{color:var(--red)}
 @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @media (max-width:640px){.tsteps li{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){.tsteps li{animation:none}}
+
+/* period switch above the day strip */
+.periods{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--rule);border-radius:999px;background:var(--card);margin:2px 0 10px}
+.periods button{font:500 13px var(--sans);border:0;background:none;color:var(--mute);padding:5px 12px;border-radius:999px;cursor:pointer;transition:background 160ms ease,color 160ms ease}
+.periods button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.periods button:active{transform:scale(.97)}
