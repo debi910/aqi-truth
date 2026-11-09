@@ -17,7 +17,7 @@ stop_all() {
 
 ensure_stack() {
   # ssh starts a stopped Codespace by itself; the start script is idempotent and runs detached.
-  ssh_cs 'cd /workspaces/aqi-truth && git pull -q --ff-only || true; if [ -f /tmp/aqi-start.pid ] && kill -0 "$(cat /tmp/aqi-start.pid)" 2>/dev/null; then echo "start script running"; else CODESPACE_NAME='"$NAME"' setsid nohup bash deploy/codespace_start.sh >> /tmp/aqi-start.log 2>&1 < /dev/null & echo "start script launched"; fi'
+  ssh_cs 'cd /workspaces/aqi-truth && git checkout -q -- docs/DB2_VERIFICATION.md 2>/dev/null; git pull -q --ff-only || true; if [ -f /tmp/aqi-start.pid ] && kill -0 "$(cat /tmp/aqi-start.pid)" 2>/dev/null; then echo "start script running"; else CODESPACE_NAME='"$NAME"' setsid nohup bash deploy/codespace_start.sh >> /tmp/aqi-start.log 2>&1 < /dev/null & echo "start script launched"; fi'
   gh codespace ports visibility 8000:public -c "$NAME" >/dev/null 2>&1 || true
 }
 
