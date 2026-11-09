@@ -74,7 +74,7 @@ async function hero(stats, calendar) {
     [(stats.readings / 1e6).toFixed(2) + "M", "15-minute pollutant readings in Db2"]]
     .map(([n, t]) => `<div><dt>${typeof n === "number" ? fmt.format(n) : n}</dt><dd>${t}</dd></div>`).join("");
   // Specimen: the refused station-day with the highest plain-average AQI, straight from the audit.
-  const pick = calendar.filter(c => c.st === "N" && c.n != null).sort((a, b) => b.n - a.n)[0];
+  const pick = calendar.filter(c => c.st === "N" && c.n != null && c.d <= PERIODS[0].to).sort((a, b) => b.n - a.n)[0];
   if (!pick) return;
   let v; try { v = await get(`/api/day?station=${pick.s}&day=${pick.d}&llm=false`, `data/day/${pick.s}_${pick.d}.json`); } catch { return; }
   $("#specimen").innerHTML = `
