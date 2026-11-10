@@ -30,7 +30,7 @@ on:
         default: "330"
 env:
   WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
-  WINDOW_END: "2026-11-11T04:30:00Z"     # 10:00 AM IST, 11 Nov
+  WINDOW_END: "2026-11-11T07:30:00Z"     # 1:00 PM IST, 11 Nov (extended from 10 AM on 10 Nov, Debi asked)
   REPO: ${{ github.repository }}
 permissions:
   contents: write      # publish the second route's address on the 'endpoint' branch
@@ -53,7 +53,11 @@ jobs:
           now=$(date -u +%s); s=$(date -u -d "$WINDOW_START" +%s); e=$(date -u -d "$WINDOW_END" +%s)
           probe=$([ "${{ github.event.inputs.probe }}" = "true" ] && echo 1 || echo 0)
           if [ "${{ github.event.inputs.stop }}" = "true" ]; then bash deploy/keepalive_runner.sh stop
-          elif [ -n "${{ github.event.inputs.until }}" ]; then bash deploy/keepalive_runner.sh keep "$(date -u -d "${{ github.event.inputs.until }}" +%s)" "$probe"
+          elif [ -n "${{ github.event.inputs.until }}" ]; then
+            u=$(date -u -d "${{ github.event.inputs.until }}" +%s)
+            # A chain started before the window end moved still carries the old end: inside the window, run to its end.
+            [ $now -le $e ] && [ $u -lt $e ] && u=$e
+            bash deploy/keepalive_runner.sh keep "$u" "$probe"
           elif [ $now -ge $s ] && [ $now -le $e ]; then bash deploy/keepalive_runner.sh keep "$e" "$probe"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then bash deploy/keepalive_runner.sh keep $(( now + ${{ github.event.inputs.minutes || 45 }} * 60 )) "$probe"
           else echo "Outside the judging window: stopping anything left running."; bash deploy/keepalive_runner.sh stop; fi
