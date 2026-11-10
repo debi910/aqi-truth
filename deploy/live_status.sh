@@ -11,7 +11,7 @@ if [ "${1:-}" = probe ]; then
   echo "--- fresh question through Granite and Db2 (seconds, event)"; s0=$(date +%s.%N)
   curl -sN -m 150 -X POST localhost:8000/api/ask/stream -H "content-type: application/json" \
     -d '{"question":"How many station-days were suspect in December?","fresh":true}' |
-    while IFS= read -r l; do printf '%5.1f %s\n' "$(echo "$(date +%s.%N) - $s0" | bc)" "$(echo "$l" | cut -c1-160)"; done | awk '!/"tok"/ || ++n<=2'
+    grep -v '"tok"' | cut -c1-200; echo "total $(( $(date +%s) - ${s0%.*} )) s"
 fi
 [ "${1:-}" = quick ] || [ "${1:-}" = probe ] && exit 0
 echo "--- evidence (written to /tmp, the committed file is not touched)"
