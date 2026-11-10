@@ -1,6 +1,11 @@
 # Read-only look at the live demo Codespace: start-script log, step markers, containers, row counts. Changes nothing.
 name: live-status
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "quick = skip the evidence run"
+        default: ""
 concurrency:
   group: live-status
 jobs:
@@ -14,4 +19,4 @@ jobs:
         run: |
           N=$(gh codespace list -R "${{ github.repository }}" --json name,state -q '.[0].name + " " + .[0].state'); echo "$N"
           case "$N" in *Available) ;; *) echo "not running"; exit 0;; esac
-          timeout 420 gh codespace ssh -c "${N% *}" -- 'cd /workspaces/aqi-truth && git checkout -q -- docs/DB2_VERIFICATION.md 2>/dev/null; git pull -q --ff-only; bash deploy/live_status.sh' || true
+          timeout 420 gh codespace ssh -c "${N% *}" -- 'cd /workspaces/aqi-truth && git checkout -q -- docs/DB2_VERIFICATION.md 2>/dev/null; git pull -q --ff-only; bash deploy/live_status.sh ${{ github.event.inputs.mode }}' || true
