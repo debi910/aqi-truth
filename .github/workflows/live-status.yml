@@ -1,0 +1,17 @@
+# Read-only look at the live demo Codespace: start-script log, step markers, containers, row counts. Changes nothing.
+name: live-status
+on: workflow_dispatch
+concurrency:
+  group: live-status
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+    steps:
+      - name: Status
+        run: |
+          N=$(gh codespace list -R "${{ github.repository }}" --json name,state -q '.[0].name + " " + .[0].state'); echo "$N"
+          case "$N" in *Available) ;; *) echo "not running"; exit 0;; esac
+          timeout 240 gh codespace ssh -c "${N% *}" -- 'cd /workspaces/aqi-truth; date -u; git log --oneline -1; ls -la --time-style=+%H:%M data/ | grep -E " \.[a-z]|backup"; echo ---; tail -n 30 /tmp/aqi-start.log | cut -c1-220; echo ---; docker compose ps -a --format "{{.Name}} {{.State}} {{.Status}}"; docker compose exec -T db2 bash -c "su - db2inst1 -c \"db2 connect to AQIDB >/dev/null; db2 -x \\\"SELECT COUNT(*), MAX(TS) FROM AQ.READING\\\"; db2 -x \\\"SELECT COUNT(*) FROM AQ.READING_HIST\\\"; db2 -x \\\"SELECT TABNAME, CONTROL FROM SYSCAT.TABLES WHERE TABSCHEMA=\x27AQ\x27 AND TABNAME IN (\x27MQT_READING_DAY\x27,\x27ASK_LOG\x27)\\\"; ls -la /database/backup\"" 2>&1 | cut -c1-200; curl -s -m 10 localhost:8000/api/health' || true
