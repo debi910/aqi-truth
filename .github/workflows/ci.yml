@@ -1,0 +1,42 @@
+# CI: IBM's Db2 Community image in a fresh container, the normal schema scripts and the October 2025 sample
+# (data/sample), then the whole pytest suite. Never touches the live demo database; needs no secrets.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  db2-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Start Db2 Community 12.1.5 (placeholder passwords from .env.example)
+        run: |
+          cp .env.example .env
+          sed -i 's/^DB2_HOST=.*/DB2_HOST=localhost/' .env
+          docker compose up -d db2
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+      - name: Wait for Db2 to create the database and its users
+        run: |
+          for i in $(seq 1 120); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q db2)")" = healthy ] && { echo "Db2 healthy after $((i * 15)) s"; exit 0; }
+            sleep 15
+          done
+          docker compose logs --tail 80 db2; exit 1
+      - name: Load the sample with the normal loader (schema, MERGE, audit, receipts, MQT, mask)
+        run: |
+          set -a; . ./.env; set +a
+          python src/load.py data/sample 2025-10-01 2025-10-31 --no-embed
+      - name: pytest (real Db2, no mocks for Db2)
+        run: |
+          set -a; . ./.env; set +a
+          python -m pytest -v tests

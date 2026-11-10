@@ -273,7 +273,7 @@ The tests run against a real Db2, not mocks. They check: CPCB sub-index values; 
 ---
 
 ## Data sources and licences
-- Air-quality data: CPCB CAAQMS via the [OpenAQ public archive](https://openaq-data-archive.s3.amazonaws.com) (OpenAQ data is CC BY 4.0). `data/sample/` holds three station-months from it.
+- Air-quality data: CPCB CAAQMS via the [OpenAQ public archive](https://openaq-data-archive.s3.amazonaws.com) (OpenAQ data is CC BY 4.0). `data/sample/` holds four station-months from it (October 2025: Chandni Chowk, Anand Vihar, ITO and the out-of-scope US Embassy monitor, which the row-permission test needs).
 - AQI method: [CPCB National Air Quality Index](https://cpcb.nic.in/National-Air-Quality-Index/).
 - Reporting: ThePrint and Newslaundry articles linked above, quoted in `data/rules.json`.
 - Models: IBM Granite 4.0 micro and Granite embedding (Apache 2.0).
