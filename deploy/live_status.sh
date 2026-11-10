@@ -8,3 +8,4 @@ echo "--- containers"; docker compose ps -a --format "{{.Name}} {{.State}} {{.St
 echo "--- evidence (written to /tmp, the committed file is not touched)"
 docker compose run --rm -v /tmp:/out setup python scripts/db2_evidence.py --out /out/ev.md 2>&1 | grep -E "^(PASS|FAIL)|wrote" | cut -c1-260
 curl -s -m 10 localhost:8000/api/health; echo
+echo "=== EV.MD BEGIN"; cat /tmp/ev.md; echo "=== EV.MD END"
