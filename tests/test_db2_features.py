@@ -149,3 +149,15 @@ def test_overlapping_rule_versions_are_refused(conn):
                               "VALUES ('MIN_HOURS_24H', 12, 'overlap', 'test', '2026-06-01', '2027-06-01')")
     conn.rollback()
     assert "23505" in str(e.value)
+
+# Workload management (sql/11_wlm.sql)
+
+def test_db2_stops_an_uncapped_reader_query(reader_conn):
+    """A client that skips the app's row cap still cannot pull more than 5,000 rows as AQREADER: SQL4712N."""
+    cur = reader_conn.cursor()
+    with pytest.raises(Exception) as e:
+        # a self-join, so even the small CI sample has more than 5,000 rows to return
+        cur.execute("SELECT A.PARAM FROM AQ.V_CHECK A JOIN AQ.V_CHECK B ON A.PARAM = B.PARAM")
+        while cur.fetchmany(1000): pass
+    reader_conn.rollback()
+    assert "SQL4712N" in str(e.value) and "AQ_QBOX_ROWS" in str(e.value)

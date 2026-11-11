@@ -224,6 +224,28 @@ SELECT VALUE FROM AQV.READING FOR SYSTEM_TIME AS OF <time before the update> WHE
           business, lambda o: re.match(r"(\d+) of \1 settings", o) and "2 versions; AS OF 2025-10-23 gives 16 hours, AS OF 2027-03-01 gives 18" in o
           and "SQLSTATE=23505" in o)
 
+    # 9c. Workload management: Db2 itself stops a runaway activity from the question-box ID (sql/11_wlm.sql).
+    def wlm():
+        thr = rows(own, "SELECT RTRIM(THRESHOLDNAME) || ' ' || RTRIM(THRESHOLDPREDICATE) || ' > ' || VARCHAR(MAXVALUE) FROM SYSCAT.THRESHOLDS "
+                        "WHERE THRESHOLDNAME LIKE 'AQ_QBOX%' AND ENABLED = 'Y' ORDER BY 1"); own.commit()
+        n = 0
+        try:     # straight to Db2 as AQREADER, skipping the app's checks and row cap, as a misbehaving client would
+            st = ibm_db.exec_immediate(rd, "SELECT * FROM AQ.V_CHECK")
+            while ibm_db.fetch_tuple(st): n += 1
+            got = f"returned all {n} rows"
+        except Exception as e:
+            m = re.search(r'threshold "(\w+)"', str(e))
+            got = f"{err(e)} after {n} rows (threshold {m.group(1) if m else '?'})"
+        finally:
+            ibm_db.rollback(rd)
+        return f"enabled thresholds: {'; '.join(r[0] for r in thr)}. Uncapped SELECT * FROM AQ.V_CHECK as AQREADER: {got}"
+    check("Workload management limits", "Connections as AQREADER map to service class AQ_QBOX (workload AQ_QBOX_WL); Db2 stops an activity "
+          "there that returns more than 5,000 rows or runs over a minute, even if a client skips the app's checks.",
+          "CREATE WORKLOAD AQ_QBOX_WL SESSION_USER ('AQREADER') SERVICE CLASS AQ_QBOX;\n"
+          "CREATE THRESHOLD AQ_QBOX_ROWS FOR SERVICE CLASS AQ_QBOX ACTIVITIES ENFORCEMENT DATABASE WHEN SQLROWSRETURNED > 5000 STOP EXECUTION;\n"
+          "SELECT * FROM AQ.V_CHECK   -- as AQREADER, no row cap", wlm,
+          lambda o: "SQL4712N" in o and "(threshold AQ_QBOX_ROWS)" in o and "AQ_QBOX_TIME" in o)
+
     # 10. Db2's own monitoring: what the question box's queries actually cost, and the plan of the compiled section.
     qb = "SELECT STATUS, COUNT(*) AS DAYS FROM AQ.V_DAY GROUP BY STATUS"
     pkg = ("SELECT NUM_EXECUTIONS, ROWS_READ, ROWS_RETURNED, TOTAL_CPU_TIME, STMT_EXEC_TIME, EXECUTABLE_ID "

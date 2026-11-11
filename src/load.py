@@ -47,6 +47,7 @@ def main():
         run_tolerant(conn, "07_access.sql", sch)    # the role is database-wide, so it may already exist
         run_tolerant(conn, "09_mqt_mask.sql", sch)
         run_tolerant(conn, "10_rule_version.sql", sch)
+        run_tolerant(conn, "11_wlm.sql", sch)
     cur.execute(f"DELETE FROM {s}.STAGE_READING"); conn.commit()
     cur.execute("VALUES CURRENT TIMESTAMP"); load_start = cur.fetchone()[0]
     t = time.time()
