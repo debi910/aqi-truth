@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "quick = skip the evidence run"
+        description: "quick = skip the evidence run; probe = one fresh question; metrics = page loads and questions per day"
         default: ""
 concurrency:
   group: live-status

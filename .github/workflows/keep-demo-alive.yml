@@ -30,7 +30,7 @@ on:
         default: "330"
 env:
   WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
-  WINDOW_END: "2026-11-12T12:30:00Z"     # 6:00 PM IST, 12 Nov (Debi asked, 11 Nov)
+  WINDOW_END: "2026-11-11T12:30:00Z"     # 6:00 PM IST, 11 Nov; off overnight to save Codespace hours, woken again on 12 Nov for the top-10 pitch
   REPO: ${{ github.repository }}
 permissions:
   contents: write      # publish the second route's address on the 'endpoint' branch

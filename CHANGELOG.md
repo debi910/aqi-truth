@@ -74,4 +74,4 @@ Fixes from three independent reviews (an IBM Db2 engineer, a fact-checker agains
 - Hosting only (no app or database change): the live demo now stays up until 1:00 PM IST on 11 Nov instead of 10:00 AM (`keep-demo-alive` window end), so it is still up after results are announced at 9 AM.
 
 ## 2026-11-11
-- Deadline moved by the organisers to 11 Nov, 1:30 PM IST (winners 4 PM IST). Hosting only: the live demo now stays up until 6:00 PM IST on 12 Nov (`keep-demo-alive` window end).
+- Deadline moved by the organisers to 11 Nov, 1:30 PM IST (winners 4 PM IST). Hosting only: the live demo stays up until 6:00 PM IST on 11 Nov, is off overnight to save the free Codespace hours, and is woken again on 12 Nov (top-10 pitch day).
