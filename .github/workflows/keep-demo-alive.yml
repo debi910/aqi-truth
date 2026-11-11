@@ -30,7 +30,7 @@ on:
         default: "330"
 env:
   WINDOW_START: "2026-11-10T09:00:00Z"   # 2:30 PM IST, 10 Nov
-  WINDOW_END: "2026-11-11T11:30:00Z"     # 5:00 PM IST, 11 Nov (deadline moved to 1:30 PM IST, winners 4 PM; Debi asked)
+  WINDOW_END: "2026-11-12T12:30:00Z"     # 6:00 PM IST, 12 Nov (Debi asked, 11 Nov)
   REPO: ${{ github.repository }}
 permissions:
   contents: write      # publish the second route's address on the 'endpoint' branch
