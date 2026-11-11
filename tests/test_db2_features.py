@@ -115,3 +115,15 @@ def test_tamper_test_leaves_no_trace(conn, app_conn):
     conn.rollback()     # new snapshot for the owner's reads
     assert one(conn, "SELECT COUNT(*) FROM AQ.READING_HIST")[0] == hist
     assert one(conn, "SELECT SUM(VALUE) FROM AQ.READING WHERE STATION_ID = 11603 AND DATE(TS) = '2025-10-23'")[0] == total
+
+# Db2 monitoring
+
+def test_package_cache_records_question_box_queries(conn, reader_conn):
+    """MON_GET_PKG_CACHE_STMT shows the reader's query with its executions and rows read."""
+    import ask
+    q = "SELECT CHECK_CODE, COUNT(*) AS N FROM AQ.V_CHECK GROUP BY CHECK_CODE"
+    for _ in range(2): assert ask.run(q, reader_conn)["outcome"] == "ANSWERED"
+    n, rr = one(conn, "SELECT NUM_EXECUTIONS, ROWS_READ FROM TABLE(MON_GET_PKG_CACHE_STMT('D', NULL, NULL, -2)) "
+                      "WHERE STMT_TEXT LIKE ? ORDER BY NUM_EXECUTIONS DESC FETCH FIRST 1 ROW ONLY", (q + "%",))
+    conn.rollback()
+    assert n >= 2 and rr > 0

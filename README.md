@@ -6,6 +6,8 @@ _CI runs in the source repo [debi910/aqi-truth](https://github.com/debi910/aqi-t
 
 > **One-Line Pitch:** Delhi's air-quality dashboards print a number even when the monitors were blank, frozen or reporting impossible values. AQI Truth puts the official CPCB method inside IBM Db2, so Db2 checks every hour and **refuses to give an AQI when the data cannot support one**, with a tamper-proof evidence ledger for each decision.
 
+> **What only AQI Truth does:** it runs on **real public government data** (1.87 million readings from 34 Delhi monitors, nothing simulated except a labelled tamper demo), behind a **live engine judges can query** (IBM Db2 + IBM Granite through LangChain), and every Db2 claim is **re-proved by one command against that same live database** ([27/27](docs/DB2_VERIFICATION.md)).
+
 - **Live demo:** https://debi910.github.io/aqi-truth/ (calls the hosted Db2 + Granite server when it is up; otherwise shows a clearly labelled export of the same run)
 - **Demo video:** https://youtu.be/sq1AwgmbHcQ (2:59, captions included)
 - **Code:** https://github.com/debi910/aqi-truth
@@ -13,7 +15,7 @@ _CI runs in the source repo [debi910/aqi-truth](https://github.com/debi910/aqi-t
 ![Verdict card: a plain average shows 175, Db2 says no AQI is computable](docs/screenshots/verdict.png)
 
 ### Judge quick-start (5 minutes)
-1. **Open the live demo:** https://debi910.github.io/aqi-truth/ . The engine is live from 10 Nov 2:30 PM IST to 11 Nov 10 AM IST (green "Live" pill). Outside that window the page says it is showing a recorded export.
+1. **Open the live demo:** https://debi910.github.io/aqi-truth/ . The engine is live until 11 Nov 6 PM IST and again on 12 Nov (green "Live" pill). Outside that window the page says it is showing a recorded export.
 2. **Pick a day Db2 refused.** Choose *CRRI Mathura Road*, then 20 Oct 2025 (Diwali) on its strip. A plain average prints 500 (Severe). Db2 says no AQI is computable, and the hour-by-hour grid shows why. Open the **Receipt** tab and press **Try to tamper**: Db2 replays its own history, catches the edit, then rolls it back.
 3. **Ask three questions in the box** (Granite writes one SQL query, code checks it, Db2 runs it as a read-only user that sees two views):
    - *How many station-days were suspect in December 2025?* (name the year: the data now also covers Oct–Nov 2026)
