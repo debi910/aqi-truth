@@ -193,6 +193,37 @@ SELECT VALUE FROM AQV.READING FOR SYSTEM_TIME AS OF <time before the update> WHE
           lambda: f"AQAPP sees: {masked(app)} | owner sees: {masked(own)}",
           lambda o: "AQAPP sees: Email me at [e-mail removed] or call [number removed]" in o and ("owner sees: " + probe) in o)
 
+    # 9b. Business time: the CPCB rule versions by the days they apply to (sql/10_rule_version.sql).
+    def business():
+        cur = own.cursor()
+        try:
+            same = rows(own, "SELECT COUNT(*) FROM AQ.SETTING S JOIN AQ.RULE_VERSION FOR BUSINESS_TIME AS OF CURRENT DATE R "
+                             "ON R.NAME = S.NAME AND R.NUM_VALUE = S.NUM_VALUE")[0][0]
+            total = rows(own, "SELECT COUNT(*) FROM AQ.SETTING")[0][0]
+            # A hypothetical rule change from 1 Jan 2027, written the way a real one would be, then rolled back.
+            cur.execute("UPDATE AQ.RULE_VERSION FOR PORTION OF BUSINESS_TIME FROM '2027-01-01' TO '9999-12-31' "
+                        "SET NUM_VALUE = 18 WHERE NAME = 'MIN_HOURS_24H'")
+            split = rows(own, "SELECT COUNT(*) FROM AQ.RULE_VERSION WHERE NAME = 'MIN_HOURS_24H'")[0][0]
+            then = rows(own, "SELECT NUM_VALUE FROM AQ.RULE_VERSION FOR BUSINESS_TIME AS OF '2025-10-23' WHERE NAME = 'MIN_HOURS_24H'")[0][0]
+            later = rows(own, "SELECT NUM_VALUE FROM AQ.RULE_VERSION FOR BUSINESS_TIME AS OF '2027-03-01' WHERE NAME = 'MIN_HOURS_24H'")[0][0]
+            try:
+                cur.execute("INSERT INTO AQ.RULE_VERSION (NAME, NUM_VALUE, NOTE, SOURCE, EFF_FROM, EFF_TO) "
+                            "VALUES ('MIN_HOURS_24H', 12, 'overlap test', 'test', '2026-06-01', '2027-06-01')")
+                overlap = "overlapping version accepted"
+            except Exception as e:
+                overlap = err(e)
+        finally:
+            own.rollback()
+        return (f"{same} of {total} settings the audit reads match the version in force today. Hypothetical change from 2027 "
+                f"(rolled back): {split} versions; AS OF 2025-10-23 gives {then:g} hours, AS OF 2027-03-01 gives {later:g}; "
+                f"an overlapping version is refused: {overlap}")
+    check("Business time (rule versions)", "AQ.RULE_VERSION keeps each CPCB rule setting with PERIOD BUSINESS_TIME (the days it applies to) "
+          "and BUSINESS_TIME WITHOUT OVERLAPS. FOR PORTION OF splits a version, AS OF picks the rule for a given day, and Db2 refuses overlaps.",
+          "UPDATE AQ.RULE_VERSION FOR PORTION OF BUSINESS_TIME FROM '2027-01-01' TO '9999-12-31' SET NUM_VALUE = 18 WHERE NAME = 'MIN_HOURS_24H';\n"
+          "SELECT NUM_VALUE FROM AQ.RULE_VERSION FOR BUSINESS_TIME AS OF '2025-10-23' WHERE NAME = 'MIN_HOURS_24H';   -- then rolled back",
+          business, lambda o: re.match(r"(\d+) of \1 settings", o) and "2 versions; AS OF 2025-10-23 gives 16 hours, AS OF 2027-03-01 gives 18" in o
+          and "SQLSTATE=23505" in o)
+
     # 10. Db2's own monitoring: what the question box's queries actually cost, and the plan of the compiled section.
     qb = "SELECT STATUS, COUNT(*) AS DAYS FROM AQ.V_DAY GROUP BY STATUS"
     pkg = ("SELECT NUM_EXECUTIONS, ROWS_READ, ROWS_RETURNED, TOTAL_CPU_TIME, STMT_EXEC_TIME, EXECUTABLE_ID "

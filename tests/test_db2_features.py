@@ -127,3 +127,25 @@ def test_package_cache_records_question_box_queries(conn, reader_conn):
                       "WHERE STMT_TEXT LIKE ? ORDER BY NUM_EXECUTIONS DESC FETCH FIRST 1 ROW ONLY", (q + "%",))
     conn.rollback()
     assert n >= 2 and rr > 0
+
+# Business time: CPCB rule versions (sql/10_rule_version.sql)
+
+def test_rule_version_in_force_matches_what_the_audit_reads(conn):
+    assert one(conn, "SELECT COUNT(*) FROM AQ.SETTING S JOIN AQ.RULE_VERSION FOR BUSINESS_TIME AS OF CURRENT DATE R "
+                     "ON R.NAME = S.NAME AND R.NUM_VALUE = S.NUM_VALUE")[0] == one(conn, "SELECT COUNT(*) FROM AQ.SETTING")[0] > 0
+
+def test_business_time_split_and_as_of(conn):
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE AQ.RULE_VERSION FOR PORTION OF BUSINESS_TIME FROM '2027-01-01' TO '9999-12-31' SET NUM_VALUE = 18 WHERE NAME = 'MIN_HOURS_24H'")
+        assert one(conn, "SELECT NUM_VALUE FROM AQ.RULE_VERSION FOR BUSINESS_TIME AS OF '2025-10-23' WHERE NAME = 'MIN_HOURS_24H'")[0] == 16
+        assert one(conn, "SELECT NUM_VALUE FROM AQ.RULE_VERSION FOR BUSINESS_TIME AS OF '2027-03-01' WHERE NAME = 'MIN_HOURS_24H'")[0] == 18
+    finally:
+        conn.rollback()
+
+def test_overlapping_rule_versions_are_refused(conn):
+    with pytest.raises(Exception) as e:
+        conn.cursor().execute("INSERT INTO AQ.RULE_VERSION (NAME, NUM_VALUE, NOTE, SOURCE, EFF_FROM, EFF_TO) "
+                              "VALUES ('MIN_HOURS_24H', 12, 'overlap', 'test', '2026-06-01', '2027-06-01')")
+    conn.rollback()
+    assert "23505" in str(e.value)
